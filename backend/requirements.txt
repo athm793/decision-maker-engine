@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+python-multipart
+pandas
+playwright
+openai
+python-dotenv
+sqlalchemy
