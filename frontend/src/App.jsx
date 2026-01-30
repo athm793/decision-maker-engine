@@ -30,6 +30,7 @@ function App() {
   const [jobHistory, setJobHistory] = useState([]);
   const [isJobHistoryLoading, setIsJobHistoryLoading] = useState(false);
   const [creditsBalance, setCreditsBalance] = useState(null);
+  const jobStatus = job?.status;
 
   // Polling Effect
   useEffect(() => {
@@ -37,6 +38,7 @@ function App() {
     if (step === 'processing' && jobId) {
       const fetchJobStatus = async () => {
         try {
+          console.log('[poll job] GET /api/jobs/%s', jobId);
           const jobRes = await axios.get(`/api/jobs/${jobId}`);
 
           setJob(jobRes.data);
@@ -46,6 +48,9 @@ function App() {
           }
         } catch (err) {
           console.error("Error polling job:", err);
+          const status = err?.response?.status;
+          const detail = err?.response?.data?.detail;
+          setError((status ? `Error polling job (${status}). ` : 'Error polling job. ') + (detail || err?.message || ''));
         }
       };
 
@@ -67,6 +72,7 @@ function App() {
       if (!jobId) return;
       setIsResultsLoading(true);
       try {
+        console.log('[poll results] GET /api/jobs/%s/results/paged', jobId);
         const response = await axios.get(`/api/jobs/${jobId}/results/paged`, {
           params: {
             q: resultsQuery || undefined,
@@ -86,13 +92,13 @@ function App() {
 
     if (step === 'processing' && jobId) {
       fetchResults();
-      if (job && ['queued', 'processing'].includes(job.status)) {
+      if (jobStatus && ['queued', 'processing'].includes(jobStatus)) {
         interval = setInterval(fetchResults, 2000);
       }
     }
 
     return () => clearInterval(interval);
-  }, [step, jobId, job?.status, resultsQuery, resultsOffset, resultsLimit]);
+  }, [step, jobId, jobStatus, resultsQuery, resultsOffset, resultsLimit]);
 
   const fetchJobHistory = async () => {
     setIsJobHistoryLoading(true);
@@ -117,7 +123,7 @@ function App() {
       try {
         const response = await axios.get('/api/credits');
         setCreditsBalance(response.data.balance);
-      } catch (err) {
+      } catch {
         setCreditsBalance(null);
       }
     };
@@ -173,6 +179,11 @@ function App() {
   const handleMappingConfirm = async (mappings, options) => {
     try {
       setStep('creating_job');
+      setError(null);
+      console.groupCollapsed('[create job] start');
+      console.log('filename:', file?.name);
+      console.log('mappings:', mappings);
+      console.log('options:', options);
       
       const reader = new FileReader();
       reader.onload = async (e) => {
@@ -192,6 +203,7 @@ function App() {
         }
 
         try {
+            console.log('[create job] POST /api/jobs rows=%s', data.length);
             const response = await axios.post('/api/jobs', {
                 filename: file.name,
                 mappings: mappings,
@@ -202,22 +214,42 @@ function App() {
             });
             
             setJobId(response.data.id);
+            setJob(response.data);
             setResultsQueryInput('');
             setResultsQuery('');
             setResultsOffset(0);
             setResultsLimit(25);
             setStep('processing');
+            console.log('[create job] ok id=%s', response.data.id);
+            console.groupEnd();
         } catch (err) {
-            console.error(err);
-            setError('Failed to create job.');
+            console.error('[create job] failed:', err);
+            const status = err?.response?.status;
+            const detail = err?.response?.data?.detail;
+            setError((status ? `Failed to create job (${status}). ` : 'Failed to create job. ') + (detail || err?.message || ''));
             setStep('mapping');
+            console.groupEnd();
         }
+      };
+      reader.onerror = (e) => {
+        console.error('[create job] FileReader error:', e);
+        setError('Failed to read file in browser.');
+        setStep('mapping');
+        console.groupEnd();
+      };
+      reader.onabort = () => {
+        console.warn('[create job] FileReader aborted');
+        setError('File reading was aborted.');
+        setStep('mapping');
+        console.groupEnd();
       };
       reader.readAsText(file);
 
     } catch (err) {
+      console.error('[create job] unexpected error:', err);
       setError('Failed to create job.');
       setStep('mapping');
+      console.groupEnd();
     }
   };
 
@@ -338,6 +370,7 @@ function App() {
             onConfirm={handleMappingConfirm}
             onCancel={handleCancel}
             creditsBalance={creditsBalance}
+            error={error}
           />
         )}
         
@@ -415,6 +448,17 @@ function App() {
                   isLoading={isResultsLoading}
                 />
             </div>
+        )}
+        {step === 'processing' && !job && (
+          <div className="flex flex-col items-center justify-center h-64 space-y-4">
+            <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+            <p className="text-xl text-gray-300">Starting Job…</p>
+            {error && (
+              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300 text-sm">
+                {error}
+              </div>
+            )}
+          </div>
         )}
       </main>
     </div>

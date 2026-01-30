@@ -4,9 +4,12 @@ import random
 from typing import List, Dict, Any
 import re
 from urllib.parse import urlparse
+import logging
 
 from app.services.llm.client import LLMDisabledError, get_llm_client
 from app.services.web_search import WebSearchService, guess_person_name_from_title
+
+logger = logging.getLogger(__name__)
 
 class ScraperService:
     def __init__(self):
@@ -17,6 +20,7 @@ class ScraperService:
 
     async def start(self):
         if not self.browser:
+            logger.info("scraper.start.launch_browser")
             self.playwright = await async_playwright().start()
             self.browser = await self.playwright.chromium.launch(headless=True) # Set headless=False to see it in action locally
             self.context = await self.browser.new_context(
@@ -32,9 +36,11 @@ class ScraperService:
                 self.llm = get_llm_client()
             except LLMDisabledError:
                 self.llm = None
+        logger.info("scraper.start.ready llm=%s web_search=%s", bool(self.llm), bool(self.web_search))
 
     async def stop(self):
         if self.browser:
+            logger.info("scraper.stop.close_browser")
             await self.browser.close()
             await self.playwright.stop()
             self.browser = None
@@ -70,6 +76,12 @@ class ScraperService:
             await self.start()
 
         if self.llm is not None:
+            logger.info(
+                "scraper.enrich_company.llm company_name=%s location=%s website=%s",
+                (str(company_name)[:200] if company_name is not None else ""),
+                (str(location)[:200] if location is not None else ""),
+                (str(website)[:200] if website is not None else ""),
+            )
             enriched = await self.llm.research_company(
                 company_name=company_name,
                 location=location,
@@ -120,7 +132,7 @@ class ScraperService:
                     }
                 )
         except Exception as e:
-            print(f"Error scraping LinkedIn for {company_name}: {e}")
+            logger.exception("scraper.search_linkedin.error company_name=%s location=%s", company_name, location)
             
         return results
 
@@ -236,7 +248,7 @@ class ScraperService:
                     }
                 )
         except Exception as e:
-            print(f"Error scraping Google Maps for {company_name}: {e}")
+            logger.exception("scraper.search_google_maps.error company_name=%s location=%s", company_name, location)
             
         return results
 
@@ -263,6 +275,12 @@ class ScraperService:
             return []
 
         if self.llm is not None:
+            logger.info(
+                "scraper.process_company.llm company_name=%s platforms=%s max_people=%s",
+                (company_name[:200] if company_name else ""),
+                selected,
+                max_people,
+            )
             people = await self.llm.research_decision_makers(
                 company_name=company_name,
                 location=location,
@@ -286,6 +304,12 @@ class ScraperService:
             return out[:max_people]
 
         if selected:
+            logger.info(
+                "scraper.process_company.waterfall company_name=%s platforms=%s max_people=%s",
+                (company_name[:200] if company_name else ""),
+                selected,
+                max_people,
+            )
             out: list[dict[str, Any]] = []
             seen: set[str] = set()
             for platform in selected:

@@ -32,3 +32,52 @@ B2B lead generation agencies, sales development representatives, recruiters, bus
 - **Backend**: Python (FastAPI)
 - **Database**: SQLite (Development) / PostgreSQL (Production)
 - **AI/Scraping**: Playwright/Selenium, OpenAI API (or similar) for analysis
+
+## Run (Docker)
+
+This builds the frontend and serves it from the FastAPI app on port 8000.
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Open:
+- http://localhost:8000/
+
+To enable Basic Auth in production, set the following in `.env`:
+
+```bash
+BASIC_AUTH_ENABLED=true
+BASIC_AUTH_USERNAME=your_user
+BASIC_AUTH_PASSWORD=your_password
+```
+
+## Run (Local dev)
+
+Backend:
+
+```bash
+cd backend
+python -m uvicorn main:app --reload --port 8000
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open:
+- http://localhost:5173/
+
+## Environment Variables
+
+- ENVIRONMENT: development|production (production enables basic auth by default)
+- BASIC_AUTH_ENABLED: true|false
+- BASIC_AUTH_USERNAME / BASIC_AUTH_PASSWORD
+- DATABASE_URL: SQLAlchemy URL (defaults to SQLite file)
+- CORS_ALLOW_ORIGINS: comma-separated list or "*" (defaults to localhost dev)
+- LLM_API_KEY / LLM_BASE_URL / LLM_MODEL: optional LLM enrichment

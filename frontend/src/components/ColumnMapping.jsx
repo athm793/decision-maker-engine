@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, AlertCircle, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
 const REQUIRED_FIELDS = [
   { key: 'company_name', label: 'Company Name', required: true },
@@ -16,7 +16,7 @@ const PLATFORM_OPTIONS = [
   { key: 'yelp', label: 'Yelp' },
 ];
 
-export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance }) {
+export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance, error }) {
   const [mappings, setMappings] = useState({});
   const [errors, setErrors] = useState([]);
   const [companyNameHint, setCompanyNameHint] = useState(null);
@@ -67,6 +67,11 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
   };
 
   const handleConfirm = () => {
+    console.groupCollapsed('[Start Processing] validate + submit');
+    console.log('mappings:', mappings);
+    console.log('selectedPlatforms:', selectedPlatforms);
+    console.log('maxContactsTotal:', maxContactsTotal);
+    console.log('maxContactsPerCompany:', maxContactsPerCompany);
     const newErrors = [];
     REQUIRED_FIELDS.forEach(field => {
       if (field.required && !mappings[field.key]) {
@@ -78,30 +83,17 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
     const websiteCol = mappings.website;
     if (companyCol) {
       const lower = companyCol.toLowerCase();
-      if (/(url|website|domain|http|www|link)/i.test(lower)) {
-        newErrors.push('company_name');
-        setCompanyNameHint('Company Name must be the business name, not a website/url column.');
-      } else if (urlRatioForColumn(companyCol) > 0.1) {
-        newErrors.push('company_name');
-        setCompanyNameHint('Company Name column contains website/url-like values. Please map the website column to Company Website.');
+      if (/(url|website|domain|http|www|link)/i.test(lower) || urlRatioForColumn(companyCol) > 0.1) {
+        setCompanyNameHint('Heads up: this looks like it might be a website/url column. That’s OK — we will try to infer the company name.');
       } else {
         setCompanyNameHint(null);
       }
     }
 
     if (companyCol && websiteCol && companyCol === websiteCol) {
-      newErrors.push('company_name');
-      newErrors.push('website');
-      setCompanyNameHint('Company Name and Company Website must be different columns.');
-      setWebsiteHint('Company Website must be a different column from Company Name.');
-    }
-
-    if (websiteCol) {
-      const websiteRatio = urlRatioForColumn(websiteCol);
-      if (websiteRatio < 0.5) {
-        newErrors.push('website');
-        setWebsiteHint('Company Website must contain website URLs/domains only.');
-      }
+      setWebsiteHint('Heads up: Company Name and Company Website are mapped to the same column. That’s OK — we will try to infer missing values.');
+    } else {
+      setWebsiteHint(null);
     }
 
     if (!selectedPlatforms || selectedPlatforms.length === 0) {
@@ -122,21 +114,30 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
     }
 
     if (newErrors.length > 0) {
+      console.warn('validation failed:', newErrors);
       setErrors(newErrors);
+      console.groupEnd();
       return;
     }
 
+    console.log('validation ok, calling onConfirm');
     onConfirm(mappings, {
       selected_platforms: selectedPlatforms,
       max_contacts_total: maxContactsTotal,
       max_contacts_per_company: maxContactsPerCompany,
     });
+    console.groupEnd();
   };
 
   if (!previewData) return null;
 
   return (
     <div className="w-full max-w-4xl mx-auto p-6">
+      {error && (
+        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300 text-sm">
+          {error}
+        </div>
+      )}
       <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
         <div className="p-6 border-b border-gray-700">
           <h2 className="text-xl font-semibold">Map Columns</h2>

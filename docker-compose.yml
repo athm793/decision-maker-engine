@@ -1,0 +1,20 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: production
+      BASIC_AUTH_ENABLED: ${BASIC_AUTH_ENABLED:-false}
+      BASIC_AUTH_USERNAME: ${BASIC_AUTH_USERNAME:-}
+      BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:-}
+      DB_AUTO_CREATE: "true"
+      DATABASE_URL: sqlite:////data/sql_app.db
+      CORS_ALLOW_ORIGINS: "*"
+    volumes:
+      - web_data:/data
+
+volumes:
+  web_data:

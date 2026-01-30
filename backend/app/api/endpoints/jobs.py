@@ -15,8 +15,23 @@ import csv
 import io
 import os
 import re
+import logging
+import sys
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+def _is_url_like(raw: object) -> bool:
+    v = str(raw or "").strip()
+    if not v:
+        return False
+    if re.match(r"^https?://", v, flags=re.IGNORECASE):
+        return True
+    if re.match(r"^www\.", v, flags=re.IGNORECASE):
+        return True
+    if re.search(r"[a-z0-9-]+\.[a-z]{2,}", v, flags=re.IGNORECASE) and not re.search(r"\s", v):
+        return True
+    return False
 
 
 class CreditResponse(BaseModel):
@@ -44,7 +59,8 @@ class DecisionMakerListResponse(BaseModel):
     limit: int
     offset: int
 
-async def process_job_task(job_id: int):
+async def _process_job_task(job_id: int):
+    logger.info("process_job_task.start job_id=%s", job_id)
     # Need to create a new DB session for the background task
     db = SessionLocal()
     scraper = ScraperService()
@@ -52,13 +68,20 @@ async def process_job_task(job_id: int):
     try:
         job = db.query(Job).filter(Job.id == job_id).first()
         if not job:
+            logger.warning("process_job_task.job_not_found job_id=%s", job_id)
             return
 
         if job.status == JobStatus.CANCELLED:
+            logger.info("process_job_task.cancelled_before_start job_id=%s", job_id)
             return
             
         job.status = JobStatus.PROCESSING
         db.commit()
+        logger.info(
+            "process_job_task.processing job_id=%s total_companies=%s",
+            job_id,
+            job.total_companies,
+        )
         
         await scraper.start()
         
@@ -77,13 +100,24 @@ async def process_job_task(job_id: int):
         website_col = mappings.get("website", "")
         company_type_col = mappings.get("industry", "")
         
-        for company in companies:
+        logger.info(
+            "process_job_task.options job_id=%s selected_platforms=%s max_total=%s max_per_company=%s credits_per_contact=%s",
+            job_id,
+            selected_platforms,
+            max_contacts_total,
+            max_contacts_per_company,
+            platforms_multiplier,
+        )
+
+        for idx, company in enumerate(companies or []):
             # Check if job was cancelled
             db.refresh(job)
             if job.status == JobStatus.CANCELLED:
+                logger.info("process_job_task.cancelled_during_run job_id=%s processed_companies=%s", job_id, job.processed_companies)
                 break
 
             if max_contacts_total and found_total >= max_contacts_total:
+                logger.info("process_job_task.hit_overall_limit job_id=%s found_total=%s", job_id, found_total)
                 break
                 
             company_name = company.get(company_col) if company_col else ""
@@ -91,6 +125,18 @@ async def process_job_task(job_id: int):
             google_maps_url = company.get(gmaps_col) if gmaps_col else None
             website = company.get(website_col) if website_col else None
             company_type = company.get(company_type_col) if company_type_col else None
+
+            if not website and _is_url_like(company_name):
+                website = company_name
+                company_name = ""
+
+            logger.info(
+                "process_job_task.company_start job_id=%s idx=%s raw_company_name=%s location=%s",
+                job_id,
+                idx,
+                (str(company_name)[:200] if company_name is not None else ""),
+                (str(location)[:200] if location is not None else ""),
+            )
 
             enriched = await scraper.enrich_company(
                 company_name=company_name,
@@ -101,6 +147,15 @@ async def process_job_task(job_id: int):
             company_name = (enriched.get("company_name") or company_name or "").strip()
             company_type = (company_type or enriched.get("company_type") or "").strip() or None
             website = (website or enriched.get("company_website") or "").strip() or None
+
+            logger.info(
+                "process_job_task.company_enriched job_id=%s idx=%s company_name=%s website=%s company_type=%s",
+                job_id,
+                idx,
+                (company_name[:200] if company_name else ""),
+                ((website or "")[:200]),
+                ((company_type or "")[:200]),
+            )
             
             # Scrape
             remaining_total = (max_contacts_total - found_total) if max_contacts_total else None
@@ -113,6 +168,15 @@ async def process_job_task(job_id: int):
                 platforms=selected_platforms,
                 max_people=remaining_per_company,
                 remaining_total=remaining_total,
+            )
+
+            logger.info(
+                "process_job_task.company_results job_id=%s idx=%s results=%s remaining_total=%s remaining_per_company=%s",
+                job_id,
+                idx,
+                len(results or []),
+                remaining_total,
+                remaining_per_company,
             )
             
             # Save Results
@@ -130,6 +194,12 @@ async def process_job_task(job_id: int):
                     job.stop_reason = "credits_exhausted"
                     job.status = JobStatus.COMPLETED
                     db.commit()
+                    logger.info(
+                        "process_job_task.credits_exhausted job_id=%s balance=%s needed=%s",
+                        job_id,
+                        credit_state.balance,
+                        platforms_multiplier,
+                    )
                     break
 
                 credit_state.balance -= platforms_multiplier
@@ -153,14 +223,31 @@ async def process_job_task(job_id: int):
             
             job.processed_companies += 1
             db.commit()
+            logger.info(
+                "process_job_task.company_done job_id=%s idx=%s processed_companies=%s decision_makers_found=%s credits_spent=%s",
+                job_id,
+                idx,
+                job.processed_companies,
+                job.decision_makers_found,
+                job.credits_spent,
+            )
             
         if job.status != JobStatus.CANCELLED:
             job.status = JobStatus.COMPLETED
         
         db.commit()
+        logger.info(
+            "process_job_task.done job_id=%s status=%s processed_companies=%s decision_makers_found=%s credits_spent=%s stop_reason=%s",
+            job_id,
+            job.status,
+            job.processed_companies,
+            job.decision_makers_found,
+            job.credits_spent,
+            job.stop_reason,
+        )
         
     except Exception as e:
-        print(f"Error processing job {job_id}: {e}")
+        logger.exception("process_job_task.error job_id=%s", job_id)
         if job:
             job.status = JobStatus.FAILED
             db.commit()
@@ -168,43 +255,51 @@ async def process_job_task(job_id: int):
         await scraper.stop()
         db.close()
 
+def _run_job_task_in_dedicated_loop(job_id: int) -> None:
+    old_policy = None
+    if sys.platform.startswith("win"):
+        try:
+            old_policy = asyncio.get_event_loop_policy()
+        except Exception:
+            old_policy = None
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        except Exception:
+            pass
+
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_process_job_task(job_id))
+        loop.run_until_complete(loop.shutdown_asyncgens())
+    finally:
+        try:
+            asyncio.set_event_loop(None)
+        except Exception:
+            pass
+        loop.close()
+        if old_policy is not None:
+            try:
+                asyncio.set_event_loop_policy(old_policy)
+            except Exception:
+                pass
+
+async def process_job_task(job_id: int):
+    if sys.platform.startswith("win"):
+        await asyncio.to_thread(_run_job_task_in_dedicated_loop, job_id)
+        return
+    await _process_job_task(job_id)
+
 @router.post("/jobs", response_model=JobResponse)
 async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    def is_url_like(raw: object) -> bool:
-        v = str(raw or "").strip()
-        if not v:
-            return False
-        if re.match(r"^https?://", v, flags=re.IGNORECASE):
-            return True
-        if re.match(r"^www\.", v, flags=re.IGNORECASE):
-            return True
-        if re.search(r"[a-z0-9-]+\.[a-z]{2,}", v, flags=re.IGNORECASE) and not re.search(r"\s", v):
-            return True
-        return False
-
-    company_col = (job_in.mappings or {}).get("company_name")
-    website_col = (job_in.mappings or {}).get("website")
-    if company_col and any(bad in company_col.lower() for bad in ["url", "website", "domain", "http", "www", "link"]):
-        raise HTTPException(status_code=400, detail="Company Name must be a name column, not a website/url column")
-    if company_col and website_col and company_col == website_col:
-        raise HTTPException(status_code=400, detail="Company Name and Company Website must be different columns")
-
-    sample_rows = (job_in.file_content or [])[:3]
-    if company_col and sample_rows:
-        company_values = [str(r.get(company_col, "") or "").strip() for r in sample_rows]
-        company_values = [v for v in company_values if v]
-        if company_values:
-            url_count = sum(1 for v in company_values if is_url_like(v))
-            if (url_count / len(company_values)) > 0.1:
-                raise HTTPException(status_code=400, detail="Company Name column contains website/url-like values. Map the website column to Company Website and keep Company Name as the business name only.")
-
-    if website_col and sample_rows:
-        website_values = [str(r.get(website_col, "") or "").strip() for r in sample_rows]
-        website_values = [v for v in website_values if v]
-        if website_values:
-            url_count = sum(1 for v in website_values if is_url_like(v))
-            if (url_count / len(website_values)) < 0.5:
-                raise HTTPException(status_code=400, detail="Company Website column must contain website URLs/domains only.")
+    logger.info(
+        "create_job.request filename=%s rows=%s selected_platforms=%s max_total=%s max_per_company=%s",
+        job_in.filename,
+        len(job_in.file_content or []),
+        job_in.selected_platforms,
+        job_in.max_contacts_total,
+        job_in.max_contacts_per_company,
+    )
 
     # Create Job record
     db_job = Job(
@@ -226,6 +321,7 @@ async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: S
     
     # Trigger background task
     background_tasks.add_task(process_job_task, db_job.id)
+    logger.info("create_job.created job_id=%s status=%s", db_job.id, db_job.status)
     
     return db_job
 

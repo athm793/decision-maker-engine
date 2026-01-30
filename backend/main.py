@@ -8,6 +8,14 @@ from app.core.auth import enforce_basic_auth_for_request
 from app.core.settings import settings
 import os
 from sqlalchemy import inspect, text
+import sys
+import asyncio
+
+if sys.platform.startswith("win"):
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except Exception:
+        pass
 
 app = FastAPI(title="Decision Maker Discovery Engine API")
 

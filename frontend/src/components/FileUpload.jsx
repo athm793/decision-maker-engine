@@ -1,7 +1,6 @@
 import React, { useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { UploadCloud, FileType, AlertCircle } from 'lucide-react';
-import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 export function FileUpload({ onFileSelect, isUploading, error }) {
