@@ -58,6 +58,8 @@ async def process_job_task(job_id: int):
         
         company_col = mappings.get("company_name")
         location_col = mappings.get("location", "")
+        gmaps_col = mappings.get("google_maps_url", "")
+        website_col = mappings.get("website", "")
         
         for company in companies:
             # Check if job was cancelled
@@ -70,9 +72,11 @@ async def process_job_task(job_id: int):
                 continue
                 
             location = company.get(location_col) if location_col else ""
+            google_maps_url = company.get(gmaps_col) if gmaps_col else None
+            website = company.get(website_col) if website_col else None
             
             # Scrape
-            results = await scraper.process_company(company_name, location)
+            results = await scraper.process_company(company_name, location, google_maps_url=google_maps_url, website=website)
             
             # Save Results
             for res in results:

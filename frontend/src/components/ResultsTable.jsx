@@ -128,8 +128,8 @@ export function ResultsTable({
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
-                      <span className="text-white font-medium">{dm.name}</span>
-                      <span className="text-gray-400 text-xs">{dm.title}</span>
+                      <span className="text-white font-medium">{dm.name || 'Unknown'}</span>
+                      {dm.title && <span className="text-gray-400 text-xs">{dm.title}</span>}
                       {dm.profile_url && (
                         <a 
                           href={dm.profile_url} 
@@ -137,7 +137,7 @@ export function ResultsTable({
                           rel="noopener noreferrer"
                           className="text-blue-400 hover:text-blue-300 text-xs flex items-center gap-1 mt-0.5 w-fit"
                         >
-                          View Profile <ExternalLink className="w-3 h-3" />
+                          Open Source <ExternalLink className="w-3 h-3" />
                         </a>
                       )}
                     </div>

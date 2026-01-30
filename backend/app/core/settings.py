@@ -29,6 +29,11 @@ class Settings:
         self.basic_auth_password = _getenv("BASIC_AUTH_PASSWORD")
         self.cors_allow_origins = _getenv("CORS_ALLOW_ORIGINS")
 
+        self.llm_api_key = _getenv("LLM_API_KEY")
+        self.llm_base_url = _getenv("LLM_BASE_URL")
+        self.llm_model = _getenv("LLM_MODEL")
+        self.llm_temperature = float(_getenv("LLM_TEMPERATURE", "0.2") or "0.2")
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
