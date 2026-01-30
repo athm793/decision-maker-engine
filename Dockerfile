@@ -5,18 +5,11 @@ WORKDIR /app/frontend
 # Ensure we install dev dependencies
 ENV NODE_ENV=development
 
-# Copy package files first for better caching
-COPY frontend/package*.json ./
+# Copy all frontend files first to ensure context is complete
+COPY frontend/ ./
+
+# Install dependencies (including devDependencies like tailwindcss)
 RUN npm install
-
-# Copy configuration files explicitly
-COPY frontend/vite.config.js ./
-COPY frontend/tailwind.config.js ./
-COPY frontend/postcss.config.cjs ./
-COPY frontend/index.html ./
-
-# Copy source code
-COPY frontend/src/ ./src/
 
 # Run build
 RUN npm run build
