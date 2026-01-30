@@ -20,6 +20,7 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
   const [mappings, setMappings] = useState({});
   const [errors, setErrors] = useState([]);
   const [companyNameHint, setCompanyNameHint] = useState(null);
+  const [websiteHint, setWebsiteHint] = useState(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState(['google_maps', 'linkedin']);
   const [maxContactsTotal, setMaxContactsTotal] = useState(50);
   const [maxContactsPerCompany, setMaxContactsPerCompany] = useState(3);
@@ -33,6 +34,7 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
   useEffect(() => {
     setErrors([]);
     setCompanyNameHint(null);
+    setWebsiteHint(null);
   }, [mappings]);
 
   const handleMappingChange = (targetField, sourceColumn) => {
@@ -46,6 +48,24 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
     }
   };
 
+  const isUrlLike = (raw) => {
+    const v = String(raw || '').trim();
+    if (!v) return false;
+    if (/^https?:\/\//i.test(v)) return true;
+    if (/^www\./i.test(v)) return true;
+    if (/[a-z0-9-]+\.[a-z]{2,}/i.test(v) && !/\s/.test(v)) return true;
+    return false;
+  };
+
+  const urlRatioForColumn = (col) => {
+    if (!col) return 0;
+    const rows = (previewData?.preview_rows || []).slice(0, 3);
+    const values = rows.map((r) => r?.[col]).filter((x) => String(x || '').trim() !== '');
+    if (values.length === 0) return 0;
+    const urlCount = values.filter(isUrlLike).length;
+    return urlCount / values.length;
+  };
+
   const handleConfirm = () => {
     const newErrors = [];
     REQUIRED_FIELDS.forEach(field => {
@@ -55,13 +75,32 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
     });
 
     const companyCol = mappings.company_name;
+    const websiteCol = mappings.website;
     if (companyCol) {
       const lower = companyCol.toLowerCase();
       if (/(url|website|domain|http|www|link)/i.test(lower)) {
         newErrors.push('company_name');
         setCompanyNameHint('Company Name must be the business name, not a website/url column.');
+      } else if (urlRatioForColumn(companyCol) > 0.1) {
+        newErrors.push('company_name');
+        setCompanyNameHint('Company Name column contains website/url-like values. Please map the website column to Company Website.');
       } else {
         setCompanyNameHint(null);
+      }
+    }
+
+    if (companyCol && websiteCol && companyCol === websiteCol) {
+      newErrors.push('company_name');
+      newErrors.push('website');
+      setCompanyNameHint('Company Name and Company Website must be different columns.');
+      setWebsiteHint('Company Website must be a different column from Company Name.');
+    }
+
+    if (websiteCol) {
+      const websiteRatio = urlRatioForColumn(websiteCol);
+      if (websiteRatio < 0.5) {
+        newErrors.push('website');
+        setWebsiteHint('Company Website must contain website URLs/domains only.');
       }
     }
 
@@ -119,11 +158,14 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
                     {field.required && <span className="text-red-400 ml-1">*</span>}
                   </span>
                   {errors.includes(field.key) && (
-                    <span className="text-xs text-red-400">Required</span>
+                    <span className="text-xs text-red-400">{field.required ? 'Required' : 'Invalid'}</span>
                   )}
                 </label>
                 {field.key === 'company_name' && companyNameHint && (
                   <div className="text-xs text-yellow-300">{companyNameHint}</div>
+                )}
+                {field.key === 'website' && websiteHint && (
+                  <div className="text-xs text-yellow-300">{websiteHint}</div>
                 )}
                 <select
                   value={mappings[field.key] || ''}

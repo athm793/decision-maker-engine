@@ -14,6 +14,7 @@ from pydantic import BaseModel
 import csv
 import io
 import os
+import re
 
 router = APIRouter()
 
@@ -85,14 +86,21 @@ async def process_job_task(job_id: int):
             if max_contacts_total and found_total >= max_contacts_total:
                 break
                 
-            company_name = company.get(company_col)
-            if not company_name:
-                continue
-                
+            company_name = company.get(company_col) if company_col else ""
             location = company.get(location_col) if location_col else ""
             google_maps_url = company.get(gmaps_col) if gmaps_col else None
             website = company.get(website_col) if website_col else None
             company_type = company.get(company_type_col) if company_type_col else None
+
+            enriched = await scraper.enrich_company(
+                company_name=company_name,
+                location=location,
+                google_maps_url=google_maps_url,
+                website=website,
+            )
+            company_name = (enriched.get("company_name") or company_name or "").strip()
+            company_type = (company_type or enriched.get("company_type") or "").strip() or None
+            website = (website or enriched.get("company_website") or "").strip() or None
             
             # Scrape
             remaining_total = (max_contacts_total - found_total) if max_contacts_total else None
@@ -162,9 +170,41 @@ async def process_job_task(job_id: int):
 
 @router.post("/jobs", response_model=JobResponse)
 async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    def is_url_like(raw: object) -> bool:
+        v = str(raw or "").strip()
+        if not v:
+            return False
+        if re.match(r"^https?://", v, flags=re.IGNORECASE):
+            return True
+        if re.match(r"^www\.", v, flags=re.IGNORECASE):
+            return True
+        if re.search(r"[a-z0-9-]+\.[a-z]{2,}", v, flags=re.IGNORECASE) and not re.search(r"\s", v):
+            return True
+        return False
+
     company_col = (job_in.mappings or {}).get("company_name")
+    website_col = (job_in.mappings or {}).get("website")
     if company_col and any(bad in company_col.lower() for bad in ["url", "website", "domain", "http", "www", "link"]):
         raise HTTPException(status_code=400, detail="Company Name must be a name column, not a website/url column")
+    if company_col and website_col and company_col == website_col:
+        raise HTTPException(status_code=400, detail="Company Name and Company Website must be different columns")
+
+    sample_rows = (job_in.file_content or [])[:3]
+    if company_col and sample_rows:
+        company_values = [str(r.get(company_col, "") or "").strip() for r in sample_rows]
+        company_values = [v for v in company_values if v]
+        if company_values:
+            url_count = sum(1 for v in company_values if is_url_like(v))
+            if (url_count / len(company_values)) > 0.1:
+                raise HTTPException(status_code=400, detail="Company Name column contains website/url-like values. Map the website column to Company Website and keep Company Name as the business name only.")
+
+    if website_col and sample_rows:
+        website_values = [str(r.get(website_col, "") or "").strip() for r in sample_rows]
+        website_values = [v for v in website_values if v]
+        if website_values:
+            url_count = sum(1 for v in website_values if is_url_like(v))
+            if (url_count / len(website_values)) < 0.5:
+                raise HTTPException(status_code=400, detail="Company Website column must contain website URLs/domains only.")
 
     # Create Job record
     db_job = Job(

@@ -2,6 +2,8 @@ from playwright.async_api import async_playwright
 import asyncio
 import random
 from typing import List, Dict, Any
+import re
+from urllib.parse import urlparse
 
 from app.services.llm.client import LLMDisabledError, get_llm_client
 from app.services.web_search import WebSearchService, guess_person_name_from_title
@@ -36,6 +38,61 @@ class ScraperService:
             await self.browser.close()
             await self.playwright.stop()
             self.browser = None
+
+    def _guess_company_name_from_website(self, website: str | None) -> str:
+        raw = (website or "").strip()
+        if not raw:
+            return ""
+        if not re.match(r"^https?://", raw, flags=re.IGNORECASE):
+            raw = "https://" + raw
+        try:
+            netloc = urlparse(raw).netloc
+        except Exception:
+            return ""
+        host = netloc.lower()
+        host = host[4:] if host.startswith("www.") else host
+        parts = [p for p in host.split(".") if p]
+        if len(parts) < 2:
+            return ""
+        base = parts[-2]
+        base = re.sub(r"[^a-z0-9-]+", " ", base, flags=re.IGNORECASE).strip()
+        base = re.sub(r"\s+", " ", base).strip()
+        return base.title() if base else ""
+
+    async def enrich_company(
+        self,
+        company_name: str | None,
+        location: str = "",
+        google_maps_url: str | None = None,
+        website: str | None = None,
+    ) -> dict[str, str]:
+        if not self.browser:
+            await self.start()
+
+        if self.llm is not None:
+            enriched = await self.llm.research_company(
+                company_name=company_name,
+                location=location,
+                google_maps_url=google_maps_url,
+                website=website,
+            )
+            name = (enriched.get("company_name") or "").strip()
+            site = (enriched.get("company_website") or "").strip()
+            ctype = (enriched.get("company_type") or "").strip()
+            if re.search(r"https?://|www\.", name, flags=re.IGNORECASE):
+                name = ""
+            return {
+                "company_name": name,
+                "company_website": site,
+                "company_type": ctype,
+            }
+
+        guessed = self._guess_company_name_from_website(website)
+        return {
+            "company_name": guessed,
+            "company_website": (website or "").strip(),
+            "company_type": "",
+        }
 
     async def search_linkedin(self, company_name: str, location: str = "") -> List[Dict[str, Any]]:
         results = []

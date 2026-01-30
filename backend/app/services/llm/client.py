@@ -20,6 +20,17 @@ def _coerce_people(payload: Any) -> list[dict[str, Any]]:
         return out
     return []
 
+def _coerce_company(payload: Any) -> dict[str, Any] | None:
+    if isinstance(payload, dict) and isinstance(payload.get("company"), dict):
+        company = payload["company"]
+        out: dict[str, Any] = {}
+        for k in ["company_name", "company_type", "company_website"]:
+            v = company.get(k)
+            if isinstance(v, str):
+                out[k] = v.strip()
+        return out
+    return None
+
 
 class OpenAICompatibleLLM:
     def __init__(self, api_key: str, base_url: str | None, model: str, temperature: float) -> None:
@@ -98,6 +109,60 @@ class OpenAICompatibleLLM:
                 return []
 
         return _coerce_people(payload)
+
+    async def research_company(
+        self,
+        company_name: str | None,
+        location: str | None = None,
+        google_maps_url: str | None = None,
+        website: str | None = None,
+    ) -> dict[str, Any]:
+        system = (
+            "You are a research assistant. Normalize the company identity from the provided row hints. "
+            "Return only JSON."
+        )
+
+        user = {
+            "company_name_hint": (company_name or "").strip(),
+            "location": (location or "").strip(),
+            "google_maps_url": (google_maps_url or "").strip(),
+            "website_hint": (website or "").strip(),
+            "output_schema": {
+                "company": {
+                    "company_name": "",
+                    "company_type": "",
+                    "company_website": "",
+                }
+            },
+            "constraints": [
+                "company_name must be the business name only (no URL).",
+                "company_website must be a website URL or domain only (no extra text).",
+                "If uncertain, leave fields as empty strings.",
+            ],
+        }
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(user)},
+        ]
+
+        text = await asyncio.to_thread(self._chat, messages)
+        try:
+            payload = json.loads(text)
+        except Exception:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                payload = json.loads(text[start : end + 1])
+            else:
+                return {"company_name": "", "company_type": "", "company_website": ""}
+
+        company = _coerce_company(payload) or {}
+        return {
+            "company_name": company.get("company_name", "") or "",
+            "company_type": company.get("company_type", "") or "",
+            "company_website": company.get("company_website", "") or "",
+        }
 
 
 def get_llm_client() -> OpenAICompatibleLLM:
