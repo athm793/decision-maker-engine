@@ -1,5 +1,5 @@
 # Build Stage for Frontend
-FROM node:18-alpine as frontend-build
+FROM node:18-slim as frontend-build
 WORKDIR /app/frontend
 
 # Ensure we install dev dependencies
