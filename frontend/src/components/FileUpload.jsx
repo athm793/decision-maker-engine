@@ -25,34 +25,34 @@ export function FileUpload({ onFileSelect, isUploading, error }) {
       <div
         {...getRootProps()}
         className={twMerge(
-          "border-2 border-dashed rounded-xl p-10 transition-all duration-200 ease-in-out cursor-pointer flex flex-col items-center justify-center text-center",
-          isDragActive ? "border-blue-500 bg-blue-50/10" : "border-gray-600 hover:border-blue-400 hover:bg-gray-800/50",
-          error ? "border-red-500 bg-red-500/10" : ""
+          "border-2 border-dashed rounded-2xl p-10 transition-all duration-200 ease-in-out cursor-pointer flex flex-col items-center justify-center text-center",
+          isDragActive ? "border-[color:var(--accent)] bg-[color:var(--accent-weak)]" : "border-[color:var(--border)] hover:border-[color:var(--accent)] hover:bg-[color:var(--surface2)]",
+          error ? "border-[color:var(--danger)] bg-[color:var(--danger-weak)]" : ""
         )}
       >
         <input {...getInputProps()} />
         
-        <div className="bg-gray-800 p-4 rounded-full mb-4">
-          <UploadCloud className="w-8 h-8 text-blue-400" />
+        <div className="mac-card p-4 rounded-full mb-4">
+          <UploadCloud className="w-8 h-8 text-[color:var(--accent)]" />
         </div>
 
         <h3 className="text-xl font-semibold mb-2">
           {isDragActive ? "Drop the CSV file here" : "Upload Company List"}
         </h3>
         
-        <p className="text-gray-400 mb-6 max-w-sm">
+        <p className="mac-muted mb-6 max-w-sm">
           Drag and drop your CSV file here, or click to browse.
           Supports files up to 50MB.
         </p>
 
-        <div className="flex items-center gap-2 text-sm text-gray-500 bg-gray-800/50 px-4 py-2 rounded-lg">
+        <div className="flex items-center gap-2 text-sm mac-muted bg-[color:var(--surface2)] px-4 py-2 rounded-xl border border-[color:var(--border)]">
           <FileType className="w-4 h-4" />
           <span>Supported format: CSV (UTF-8, Latin-1)</span>
         </div>
       </div>
 
       {error && (
-        <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-3 text-red-400">
+        <div className="mt-4 p-4 mac-card flex items-start gap-3 text-[color:var(--danger)]" style={{ background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))' }}>
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <p className="text-sm">{error}</p>
         </div>
@@ -60,12 +60,12 @@ export function FileUpload({ onFileSelect, isUploading, error }) {
 
       {isUploading && (
         <div className="mt-6">
-          <div className="flex justify-between text-sm mb-2 text-gray-300">
+          <div className="flex justify-between text-sm mb-2 mac-muted">
             <span>Uploading...</span>
             <span>100%</span>
           </div>
-          <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 animate-pulse w-full"></div>
+          <div className="h-2 bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-full overflow-hidden">
+            <div className="h-full bg-[color:var(--accent)] animate-pulse w-full"></div>
           </div>
         </div>
       )}

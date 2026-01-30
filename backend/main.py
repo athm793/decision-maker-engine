@@ -68,6 +68,8 @@ def startup() -> None:
             missing.append(("company_country", "TEXT"))
         if "company_website" not in existing:
             missing.append(("company_website", "TEXT"))
+        if "uploaded_company_data" not in existing:
+            missing.append(("uploaded_company_data", "TEXT"))
 
         if missing:
             with engine.begin() as conn:

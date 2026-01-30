@@ -6,6 +6,7 @@ import { JobProgress } from './components/JobProgress';
 import { ResultsTable } from './components/ResultsTable';
 import { JobHistory } from './components/JobHistory';
 import { Loader2, Square } from 'lucide-react';
+import { ThemeToggle } from './components/ThemeToggle';
 
 function App() {
   const [step, setStep] = useState('upload'); // upload, mapping, creating_job, processing
@@ -31,6 +32,17 @@ function App() {
   const [isJobHistoryLoading, setIsJobHistoryLoading] = useState(false);
   const [creditsBalance, setCreditsBalance] = useState(null);
   const jobStatus = job?.status;
+
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   // Polling Effect
   useEffect(() => {
@@ -321,38 +333,36 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
-      <header className="border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+      <header className="sticky top-0 z-10">
+        <div className="border-b border-[color:var(--border)] bg-[color:var(--bg)]/70 backdrop-blur-md">
+          <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center font-semibold text-white bg-[color:var(--accent)] shadow-sm">
               D
             </div>
-            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-teal-400">
+            <span className="text-base sm:text-lg font-semibold tracking-tight">
               Decision Maker Discovery
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <div className="text-xs text-gray-300 bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-1.5">
-              Credits: {typeof creditsBalance === 'number' ? creditsBalance : '—'}
+            <div className="hidden sm:flex text-xs mac-muted mac-button px-3 py-2">
+              Credits: <span className="ml-1 text-[var(--text)]">{typeof creditsBalance === 'number' ? creditsBalance : '—'}</span>
             </div>
-            <nav className="flex gap-4 text-sm font-medium text-gray-400">
-              <a href="#" className="hover:text-white transition-colors">Dashboard</a>
-              <a href="#" className="hover:text-white transition-colors">Jobs</a>
-              <a href="#" className="hover:text-white transition-colors">Settings</a>
-            </nav>
+            <ThemeToggle theme={theme} onChange={setTheme} />
+          </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <main className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 py-10">
         {step === 'upload' && (
           <div className="space-y-8">
-            <div className="text-center space-y-4">
-              <h1 className="text-4xl font-bold tracking-tight">
+            <div className="text-center space-y-3">
+              <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
                 Find Decision Makers in Seconds
               </h1>
-              <p className="text-lg text-gray-400 max-w-2xl mx-auto">
+              <p className="text-base sm:text-lg mac-muted max-w-2xl mx-auto">
                 Upload your business list and let our AI agents hunt down executives across LinkedIn, Google Maps, and more.
               </p>
             </div>
@@ -384,21 +394,21 @@ function App() {
         
         {step === 'creating_job' && (
            <div className="flex flex-col items-center justify-center h-64 space-y-4">
-             <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
-             <p className="text-xl text-gray-300">Creating Job...</p>
+             <Loader2 className="w-10 h-10 text-[color:var(--accent)] animate-spin" />
+             <p className="text-lg mac-muted">Creating Job…</p>
            </div>
         )}
 
         {step === 'processing' && job && (
             <div className="space-y-8 animate-in fade-in duration-500">
                 <div className="flex justify-between items-center">
-                    <h1 className="text-2xl font-bold">Job Dashboard</h1>
+                    <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Job Dashboard</h1>
                     <div className="flex items-center gap-3">
                         {['queued', 'processing'].includes(job.status) && (
                           <button
                               onClick={handleStopJob}
                               disabled={isCancelling}
-                              className="px-4 py-2 bg-red-600/20 text-red-300 hover:bg-red-600/30 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                              className="mac-button-danger px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium flex items-center gap-2"
                           >
                               <Square className="w-4 h-4" />
                               {isCancelling ? 'Stopping…' : 'Stop Job'}
@@ -406,7 +416,7 @@ function App() {
                         )}
                         <button 
                             onClick={handleNewJob}
-                            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
+                            className="mac-button px-4 py-2 text-sm font-medium"
                         >
                             New Job
                         </button>
@@ -414,23 +424,23 @@ function App() {
                 </div>
 
                 {error && (
-                  <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300 text-sm">
+                  <div className="mac-card p-4 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', color: 'var(--danger)' }}>
                     {error}
                   </div>
                 )}
 
                 {job.status === 'completed' && (
-                  <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-200 text-sm">
+                  <div className="mac-card p-4 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border))', background: 'color-mix(in srgb, var(--accent-weak) 60%, var(--surface))' }}>
                     Job completed. Results below are final.
                   </div>
                 )}
                 {job.status === 'cancelled' && (
-                  <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-200 text-sm">
+                  <div className="mac-card p-4 text-sm mac-muted">
                     Job cancelled. Results below include anything found before stopping.
                   </div>
                 )}
                 {job.status === 'failed' && (
-                  <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-200 text-sm">
+                  <div className="mac-card p-4 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', color: 'var(--danger)' }}>
                     Job failed. Check logs for details.
                   </div>
                 )}
@@ -459,10 +469,10 @@ function App() {
         )}
         {step === 'processing' && !job && (
           <div className="flex flex-col items-center justify-center h-64 space-y-4">
-            <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
-            <p className="text-xl text-gray-300">Starting Job…</p>
+            <Loader2 className="w-10 h-10 text-[color:var(--accent)] animate-spin" />
+            <p className="text-lg mac-muted">Starting Job…</p>
             {error && (
-              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300 text-sm">
+              <div className="mac-card p-4 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', color: 'var(--danger)' }}>
                 {error}
               </div>
             )}

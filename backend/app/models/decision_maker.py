@@ -18,5 +18,6 @@ class DecisionMaker(Base):
     profile_url = Column(String)
     confidence_score = Column(String) # HIGH, MEDIUM, LOW
     reasoning = Column(Text)
+    uploaded_company_data = Column(Text)
     
     job = relationship("Job", back_populates="decision_makers")

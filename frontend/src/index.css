@@ -3,24 +3,114 @@
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  color-scheme: light;
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface2: #f2f2f5;
+  --border: rgba(0, 0, 0, 0.10);
+  --text: #111114;
+  --muted: rgba(17, 17, 20, 0.60);
+  --accent: #007aff;
+  --accent-weak: rgba(0, 122, 255, 0.12);
+  --warning: #ff9500;
+  --warning-weak: rgba(255, 149, 0, 0.14);
+  --danger: #ff3b30;
+  --danger-weak: rgba(255, 59, 48, 0.12);
+}
+
+html.dark {
+  color-scheme: dark;
+  --bg: #0b0b0d;
+  --surface: #141418;
+  --surface2: #1c1c22;
+  --border: rgba(255, 255, 255, 0.10);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.62);
+  --accent: #0a84ff;
+  --accent-weak: rgba(10, 132, 255, 0.18);
+  --warning: #ff9f0a;
+  --warning-weak: rgba(255, 159, 10, 0.18);
+  --danger: #ff453a;
+  --danger-weak: rgba(255, 69, 58, 0.18);
 }
 
 body {
   margin: 0;
-  display: block; /* Changed from flex/place-items: center to support full page layouts */
+  display: block;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
 }
 
+@layer components {
+  .mac-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
+  }
+
+  html.dark .mac-card {
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05), 0 12px 28px rgba(0, 0, 0, 0.45);
+  }
+
+  .mac-button {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    transition: background-color 150ms ease, transform 80ms ease, opacity 150ms ease;
+  }
+
+  .mac-button:hover {
+    background: color-mix(in srgb, var(--surface2) 80%, var(--accent-weak));
+  }
+
+  .mac-button:active {
+    transform: translateY(0.5px);
+  }
+
+  .mac-button-primary {
+    background: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 70%, black);
+    color: white;
+  }
+
+  .mac-button-primary:hover {
+    filter: brightness(1.03);
+  }
+
+  .mac-button-danger {
+    background: var(--danger-weak);
+    border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+    color: var(--danger);
+  }
+
+  .mac-input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    outline: none;
+    transition: box-shadow 150ms ease, border-color 150ms ease;
+  }
+
+  .mac-input:focus {
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    box-shadow: 0 0 0 3px var(--accent-weak);
+  }
+
+  .mac-muted {
+    color: var(--muted);
+  }
+}

@@ -136,14 +136,14 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
   return (
     <div className="w-full max-w-4xl mx-auto p-6">
       {error && (
-        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300 text-sm">
+        <div className="mb-4 p-4 mac-card text-sm" style={{ borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', color: 'var(--danger)' }}>
           {error}
         </div>
       )}
-      <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
-        <div className="p-6 border-b border-gray-700">
+      <div className="mac-card overflow-hidden">
+        <div className="p-6 border-b border-[color:var(--border)]">
           <h2 className="text-xl font-semibold">Map Columns</h2>
-          <p className="text-gray-400 mt-1">
+          <p className="mac-muted mt-1">
             Map columns from your CSV to the required fields.
             We found {previewData.total_rows} rows in {previewData.filename}.
           </p>
@@ -152,32 +152,29 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
         <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
           {/* Mapping Form */}
           <div className="space-y-4">
-            <h3 className="font-medium text-gray-300 mb-4">Field Mapping</h3>
+            <h3 className="font-medium mb-4">Field Mapping</h3>
             {REQUIRED_FIELDS.map(field => (
               <div key={field.key} className="space-y-1">
-                <label className="text-sm font-medium text-gray-400 flex items-center justify-between">
+                <label className="text-sm font-medium mac-muted flex items-center justify-between">
                   <span>
                     {field.label}
                     {field.required && <span className="text-red-400 ml-1">*</span>}
                   </span>
                   {errors.includes(field.key) && (
-                    <span className="text-xs text-red-400">{field.required ? 'Required' : 'Invalid'}</span>
+                    <span className="text-xs text-[color:var(--danger)]">{field.required ? 'Required' : 'Invalid'}</span>
                   )}
                 </label>
                 {field.key === 'company_name' && companyNameHint && (
-                  <div className="text-xs text-yellow-300">{companyNameHint}</div>
+                  <div className="text-xs mac-muted">{companyNameHint}</div>
                 )}
                 {field.key === 'website' && websiteHint && (
-                  <div className="text-xs text-yellow-300">{websiteHint}</div>
+                  <div className="text-xs mac-muted">{websiteHint}</div>
                 )}
                 <select
                   value={mappings[field.key] || ''}
                   onChange={(e) => handleMappingChange(field.key, e.target.value)}
-                  className={`w-full bg-gray-900 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 transition-colors ${
-                    errors.includes(field.key)
-                      ? 'border-red-500 focus:ring-red-500/20'
-                      : 'border-gray-700 focus:border-blue-500 focus:ring-blue-500/20'
-                  }`}
+                  className={`w-full mac-input px-3 py-2 text-sm ${errors.includes(field.key) ? 'ring-2' : ''}`}
+                  style={errors.includes(field.key) ? { borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', boxShadow: '0 0 0 3px var(--danger-weak)' } : undefined}
                 >
                   <option value="">-- Select Column --</option>
                   {previewData.columns.map(col => (
@@ -188,14 +185,14 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
             ))}
 
             <div className="pt-6">
-              <h3 className="font-medium text-gray-300 mb-3">Research Options</h3>
+              <h3 className="font-medium mb-3">Research Options</h3>
 
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <div className="text-xs text-gray-400">Platforms</div>
+                  <div className="text-xs mac-muted">Platforms</div>
                   <div className="grid grid-cols-1 gap-2">
                     {PLATFORM_OPTIONS.map((p) => (
-                      <label key={p.key} className="flex items-center gap-2 text-sm text-gray-300">
+                      <label key={p.key} className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
                           checked={selectedPlatforms.includes(p.key)}
@@ -205,46 +202,45 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
                               return prev.filter((x) => x !== p.key);
                             });
                           }}
-                          className="accent-blue-500"
+                          className="accent-[var(--accent)]"
                         />
                         {p.label}
                       </label>
                     ))}
                   </div>
+                  <div className="text-xs mac-muted">
+                    Choosing more than 2 platforms will cause the job to process for significantly longer.
+                  </div>
                   {errors.includes('platforms') && (
-                    <div className="text-xs text-red-400">Select at least one platform.</div>
+                    <div className="text-xs text-[color:var(--danger)]">Select at least one platform.</div>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-xs text-gray-400">Overall Contact Finding Limit</div>
+                  <div className="text-xs mac-muted">Overall Contact Finding Limit</div>
                   <input
                     type="number"
                     min={1}
                     value={maxContactsTotal}
                     onChange={(e) => setMaxContactsTotal(Number(e.target.value))}
-                    className={
-                      'w-full bg-gray-900 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 transition-colors ' +
-                      (errors.includes('max_total') ? 'border-red-500 focus:ring-red-500/20' : 'border-gray-700 focus:border-blue-500 focus:ring-blue-500/20')
-                    }
+                    className="w-full mac-input px-3 py-2 text-sm"
+                    style={errors.includes('max_total') ? { borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', boxShadow: '0 0 0 3px var(--danger-weak)' } : undefined}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-xs text-gray-400">Contacts Found Per Company Limit</div>
+                  <div className="text-xs mac-muted">Contacts Found Per Company Limit</div>
                   <input
                     type="number"
                     min={1}
                     value={maxContactsPerCompany}
                     onChange={(e) => setMaxContactsPerCompany(Number(e.target.value))}
-                    className={
-                      'w-full bg-gray-900 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 transition-colors ' +
-                      (errors.includes('max_per_company') ? 'border-red-500 focus:ring-red-500/20' : 'border-gray-700 focus:border-blue-500 focus:ring-blue-500/20')
-                    }
+                    className="w-full mac-input px-3 py-2 text-sm"
+                    style={errors.includes('max_per_company') ? { borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', boxShadow: '0 0 0 3px var(--danger-weak)' } : undefined}
                   />
                 </div>
 
-                <div className="text-xs text-gray-400">
+                <div className="text-xs mac-muted">
                   Estimated credits: {Math.max(1, selectedPlatforms.length) * maxContactsTotal}
                   {typeof creditsBalance === 'number' && ` • Available: ${creditsBalance}`}
                 </div>
@@ -254,23 +250,23 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
 
           {/* Data Preview */}
           <div className="md:col-span-2 space-y-4">
-            <h3 className="font-medium text-gray-300 mb-4">File Preview</h3>
-            <div className="overflow-x-auto border border-gray-700 rounded-lg">
+            <h3 className="font-medium mb-4">File Preview</h3>
+            <div className="overflow-x-auto border border-[color:var(--border)] rounded-2xl bg-[color:var(--surface)]">
               <table className="w-full text-sm text-left">
-                <thead className="text-xs text-gray-400 uppercase bg-gray-900/50">
+                <thead className="text-[10px] mac-muted uppercase bg-[color:var(--surface2)]">
                   <tr>
                     {previewData.columns.map(col => (
-                      <th key={col} className="px-4 py-3 whitespace-nowrap border-b border-gray-700">
+                      <th key={col} className="px-4 py-3 whitespace-nowrap border-b border-[color:var(--border)] font-semibold">
                         {col}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-700">
+                <tbody className="divide-y divide-[color:var(--border)]">
                   {previewData.preview_rows.map((row, idx) => (
-                    <tr key={idx} className="bg-gray-800/50 hover:bg-gray-800">
+                    <tr key={idx} className="hover:bg-[color:var(--surface2)] transition-colors">
                       {previewData.columns.map(col => (
-                        <td key={`${idx}-${col}`} className="px-4 py-3 whitespace-nowrap text-gray-300">
+                        <td key={`${idx}-${col}`} className="px-4 py-3 whitespace-nowrap">
                           {row[col]}
                         </td>
                       ))}
@@ -282,16 +278,16 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
           </div>
         </div>
 
-        <div className="p-6 border-t border-gray-700 bg-gray-900/30 flex justify-end gap-3">
+        <div className="p-6 border-t border-[color:var(--border)] bg-[color:var(--surface2)] flex justify-end gap-3">
           <button
             onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+            className="mac-button px-4 py-2 text-sm font-medium"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
-            className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors flex items-center gap-2"
+            className="mac-button-primary px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
           >
             Start Processing
             <ArrowRight className="w-4 h-4" />

@@ -55,6 +55,90 @@ def _split_location_to_city_country(raw: object) -> tuple[str, str]:
         return (city, country)
     return ("", "")
 
+def _looks_like_postal_code(raw: object) -> bool:
+    v = _text(raw)
+    if not v:
+        return False
+    if re.match(r"^\d{4,6}(-\d{4})?$", v):
+        return True
+    if re.search(r"\b\d{4,6}\b", v) and len(v) <= 12 and not re.search(r"[a-zA-Z]", v):
+        return True
+    return False
+
+def _looks_like_address(raw: object) -> bool:
+    v = _text(raw)
+    if len(v) < 6:
+        return False
+    if re.search(r"\b(po box|p\.?o\.?\s*box)\b", v, flags=re.IGNORECASE):
+        return True
+    if re.search(r"\b\d{5}(-\d{4})?\b", v) and "," in v:
+        return True
+    if re.search(r"\b\d{1,6}\s+\S+", v) and re.search(
+        r"\b(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|hwy|highway|suite|ste|apt|unit|pl|place|ct|court|cir|circle)\b",
+        v,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    return False
+
+def _clean_company_type(raw: object) -> str:
+    v = _text(raw)
+    if not v:
+        return ""
+    if _is_url_like(v):
+        return ""
+    if _looks_like_address(v):
+        return ""
+    if _looks_like_postal_code(v):
+        return ""
+    return v
+
+def _clean_company_name(raw: object) -> str:
+    v = _text(raw)
+    if not v:
+        return ""
+    if _is_url_like(v):
+        return ""
+    return v
+
+def _clean_city(raw: object) -> str:
+    v = _text(raw)
+    if not v:
+        return ""
+    if _looks_like_postal_code(v):
+        return ""
+    if re.search(r"\d", v):
+        return ""
+    return v
+
+def _clean_country(raw: object) -> str:
+    v = _text(raw)
+    if not v:
+        return ""
+    if _looks_like_postal_code(v):
+        return ""
+    if len(v) == 2 and v.isupper():
+        return ""
+    if re.search(r"\d", v):
+        return ""
+    return v
+
+def _parse_uploaded_company_data(raw: object) -> dict:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return {}
+        try:
+            obj = json.loads(s)
+            return obj if isinstance(obj, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
 
 class CreditResponse(BaseModel):
     balance: int
@@ -159,24 +243,25 @@ async def _process_job_task(job_id: int):
                 logger.info("process_job_task.hit_overall_limit job_id=%s found_total=%s", job_id, found_total)
                 break
                 
-            company_name = company.get(company_col) if company_col else ""
-            location = company.get(location_col) if location_col else ""
+            company_name = _text(company.get(company_col) if company_col else "")
+            location = _text(company.get(location_col) if location_col else "")
             google_maps_url = company.get(gmaps_col) if gmaps_col else None
-            website = company.get(website_col) if website_col else None
-            company_type = company.get(company_type_col) if company_type_col else None
-            company_city = company.get(city_col) if city_col else None
-            company_country = company.get(country_col) if country_col else None
+            website = _text(company.get(website_col) if website_col else "")
+            company_type = _clean_company_type(company.get(company_type_col) if company_type_col else None) or None
+            company_city = _clean_city(company.get(city_col) if city_col else None) or None
+            company_country = _clean_country(company.get(country_col) if country_col else None) or None
 
-            if not website and _is_url_like(company_name):
-                website = company_name
+            if _is_url_like(company_name):
+                if not website:
+                    website = company_name
                 company_name = ""
 
             if not company_city or not company_country:
                 inferred_city, inferred_country = _split_location_to_city_country(location)
                 if not company_city and inferred_city:
-                    company_city = inferred_city
+                    company_city = _clean_city(inferred_city) or None
                 if not company_country and inferred_country:
-                    company_country = inferred_country
+                    company_country = _clean_country(inferred_country) or None
 
             logger.info(
                 "process_job_task.company_start job_id=%s idx=%s raw_company_name=%s location=%s",
@@ -193,11 +278,26 @@ async def _process_job_task(job_id: int):
                 google_maps_url=google_maps_url,
                 website=website,
             )
-            company_name = (enriched.get("company_name") or company_name or "").strip()
-            company_type = (company_type or enriched.get("company_type") or "").strip() or None
-            website = (website or enriched.get("company_website") or "").strip() or None
-            company_city = (company_city or enriched.get("company_city") or "").strip() or None
-            company_country = (company_country or enriched.get("company_country") or "").strip() or None
+            enriched_name = _clean_company_name(enriched.get("company_name"))
+            company_name = enriched_name or _clean_company_name(company_name)
+            if not company_name and website:
+                company_name = _clean_company_name(scraper._guess_company_name_from_website(website))
+
+            enriched_type = _clean_company_type(enriched.get("company_type"))
+            company_type = company_type or (enriched_type or None)
+            if company_type:
+                company_type = _clean_company_type(company_type) or None
+
+            website = (_text(website) or _text(enriched.get("company_website"))) or None
+
+            company_city = _clean_city(company_city or enriched.get("company_city")) or None
+            company_country = _clean_country(company_country or enriched.get("company_country")) or None
+            if not company_city or not company_country:
+                inferred_city, inferred_country = _split_location_to_city_country(location_hint)
+                if not company_city and inferred_city:
+                    company_city = _clean_city(inferred_city) or None
+                if not company_country and inferred_country:
+                    company_country = _clean_country(inferred_country) or None
 
             logger.info(
                 "process_job_task.company_enriched job_id=%s idx=%s company_name=%s website=%s company_type=%s city=%s country=%s",
@@ -215,7 +315,7 @@ async def _process_job_task(job_id: int):
             remaining_per_company = max_contacts_per_company if max_contacts_per_company else None
             results = await scraper.process_company(
                 company_name,
-                location,
+                location_hint,
                 google_maps_url=google_maps_url,
                 website=website,
                 platforms=selected_platforms,
@@ -279,6 +379,7 @@ async def _process_job_task(job_id: int):
                     profile_url=_text(res.get("profile_url")),
                     confidence_score=res.get("confidence"),
                     reasoning=res.get("reasoning"),
+                    uploaded_company_data=json.dumps(company, ensure_ascii=False),
                 )
                 db.add(dm)
                 job.decision_makers_found += 1
@@ -469,6 +570,7 @@ async def get_job_results_paged(
 
 @router.get("/jobs/{job_id}/results.csv")
 async def download_job_results_csv(job_id: int, q: str | None = None, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
     query = db.query(DecisionMaker).filter(DecisionMaker.job_id == job_id)
 
     if q:
@@ -490,6 +592,27 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
 
     rows = query.order_by(DecisionMaker.id.desc()).all()
 
+    company_cols: list[str] = []
+    seen_company_cols: set[str] = set()
+    if job and isinstance(job.companies_data, list) and len(job.companies_data) > 0 and isinstance(job.companies_data[0], dict):
+        for row in job.companies_data:
+            if not isinstance(row, dict):
+                continue
+            for k in row.keys():
+                if k in seen_company_cols:
+                    continue
+                seen_company_cols.add(k)
+                company_cols.append(str(k))
+
+    for dm in rows:
+        payload = _parse_uploaded_company_data(getattr(dm, "uploaded_company_data", None))
+        for k in payload.keys():
+            ks = str(k)
+            if ks in seen_company_cols:
+                continue
+            seen_company_cols.add(ks)
+            company_cols.append(ks)
+
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
@@ -506,8 +629,10 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
             "Confidence",
             "Reasoning",
         ]
+        + [f"Uploaded - {c}" for c in company_cols]
     )
     for dm in rows:
+        payload = _parse_uploaded_company_data(getattr(dm, "uploaded_company_data", None))
         writer.writerow(
             [
                 _non_empty(getattr(dm, "company_name", ""), "Unknown"),
@@ -522,6 +647,7 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
                 _non_empty(getattr(dm, "confidence_score", ""), "UNKNOWN"),
                 _non_empty(getattr(dm, "reasoning", ""), "N/A"),
             ]
+            + [_text(payload.get(c, "")) for c in company_cols]
         )
 
     filename = f"job-{job_id}-results.csv"

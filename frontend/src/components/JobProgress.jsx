@@ -9,11 +9,11 @@ export function JobProgress({ job }) {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'processing': return 'text-blue-400';
-      case 'completed': return 'text-green-400';
-      case 'failed': return 'text-red-400';
-      case 'cancelled': return 'text-yellow-400';
-      default: return 'text-gray-400';
+      case 'processing': return 'text-[color:var(--accent)]';
+      case 'completed': return 'text-[color:var(--accent)]';
+      case 'failed': return 'text-[color:var(--danger)]';
+      case 'cancelled': return 'text-[var(--muted)]';
+      default: return 'text-[var(--muted)]';
     }
   };
 
@@ -40,7 +40,7 @@ export function JobProgress({ job }) {
 
   return (
     <div className="w-full max-w-4xl mx-auto p-6 space-y-6">
-      <div className="bg-gray-800 rounded-xl border border-gray-700 p-6">
+      <div className="mac-card p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-semibold flex items-center gap-2">
@@ -49,7 +49,7 @@ export function JobProgress({ job }) {
               </span>
               Processing Job #{job.id}
             </h2>
-            <p className="text-gray-400 text-sm mt-1">
+            <p className="mac-muted text-sm mt-1">
               File: {job.filename}
             </p>
           </div>
@@ -57,56 +57,56 @@ export function JobProgress({ job }) {
             <div className={clsx('text-xs font-medium uppercase tracking-wide', getStatusColor(job.status))}>
               {getStatusLabel(job.status)}
             </div>
-            <div className="text-2xl font-bold text-white">
+            <div className="text-2xl font-semibold">
               {job.decision_makers_found}
             </div>
-            <div className="text-xs text-gray-500 uppercase tracking-wide">
+            <div className="text-xs mac-muted uppercase tracking-wide">
               Decision Makers Found
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <div className="bg-gray-900/40 border border-gray-700 rounded-lg p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Platforms</div>
-            <div className="text-sm text-gray-200 mt-1">
+          <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">
+            <div className="text-xs mac-muted uppercase tracking-wide">Platforms</div>
+            <div className="text-sm mt-1">
               {(job.selected_platforms && job.selected_platforms.length > 0) ? job.selected_platforms.join(', ') : 'default'}
             </div>
           </div>
-          <div className="bg-gray-900/40 border border-gray-700 rounded-lg p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Limits</div>
-            <div className="text-sm text-gray-200 mt-1">
+          <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">
+            <div className="text-xs mac-muted uppercase tracking-wide">Limits</div>
+            <div className="text-sm mt-1">
               {job.max_contacts_total || '—'} total • {job.max_contacts_per_company || '—'} / company
             </div>
           </div>
-          <div className="bg-gray-900/40 border border-gray-700 rounded-lg p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Credits Spent</div>
-            <div className="text-sm text-gray-200 mt-1">
+          <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">
+            <div className="text-xs mac-muted uppercase tracking-wide">Credits Spent</div>
+            <div className="text-sm mt-1">
               {job.credits_spent ?? 0}
             </div>
             {job.stop_reason === 'credits_exhausted' && (
-              <div className="text-xs text-yellow-300 mt-1">Stopped: credits exhausted</div>
+              <div className="text-xs mt-1 mac-muted">Stopped: credits exhausted</div>
             )}
           </div>
         </div>
 
         {/* Progress Bar */}
         <div className="space-y-2">
-          <div className="flex justify-between text-sm text-gray-400">
+          <div className="flex justify-between text-sm mac-muted">
             <span>Progress: {percentage}%</span>
             <span>{job.processed_companies} / {job.total_companies} Companies</span>
           </div>
-          <div className="h-3 bg-gray-700 rounded-full overflow-hidden">
+          <div className="h-3 bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-full overflow-hidden">
             <div 
               className={clsx(
                 "h-full transition-all duration-500 ease-out",
                 job.status === 'completed'
-                  ? "bg-green-500"
+                  ? "bg-[color:var(--accent)]"
                   : job.status === 'failed'
-                    ? "bg-red-500"
+                    ? "bg-[color:var(--danger)]"
                     : job.status === 'cancelled'
-                      ? "bg-yellow-500"
-                      : "bg-blue-500"
+                      ? "bg-[color:var(--muted)]"
+                      : "bg-[color:var(--accent)]"
               )}
               style={{ width: `${percentage}%` }}
             />
