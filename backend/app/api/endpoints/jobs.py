@@ -18,6 +18,8 @@ router = APIRouter()
 class DecisionMakerResponse(BaseModel):
     id: int
     company_name: str
+    company_type: str | None = None
+    company_website: str | None = None
     name: str | None
     title: str | None
     platform: str | None
@@ -60,6 +62,7 @@ async def process_job_task(job_id: int):
         location_col = mappings.get("location", "")
         gmaps_col = mappings.get("google_maps_url", "")
         website_col = mappings.get("website", "")
+        company_type_col = mappings.get("industry", "")
         
         for company in companies:
             # Check if job was cancelled
@@ -74,6 +77,7 @@ async def process_job_task(job_id: int):
             location = company.get(location_col) if location_col else ""
             google_maps_url = company.get(gmaps_col) if gmaps_col else None
             website = company.get(website_col) if website_col else None
+            company_type = company.get(company_type_col) if company_type_col else None
             
             # Scrape
             results = await scraper.process_company(company_name, location, google_maps_url=google_maps_url, website=website)
@@ -83,6 +87,8 @@ async def process_job_task(job_id: int):
                 dm = DecisionMaker(
                     job_id=job.id,
                     company_name=company_name,
+                    company_type=company_type,
+                    company_website=website,
                     name=res.get("name"),
                     title=res.get("title"),
                     platform=res.get("platform", "LinkedIn"),
@@ -190,6 +196,8 @@ async def get_job_results_paged(
         query = query.filter(
             or_(
                 DecisionMaker.company_name.ilike(q_like),
+                DecisionMaker.company_type.ilike(q_like),
+                DecisionMaker.company_website.ilike(q_like),
                 DecisionMaker.name.ilike(q_like),
                 DecisionMaker.title.ilike(q_like),
                 DecisionMaker.platform.ilike(q_like),
@@ -212,6 +220,8 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
         query = query.filter(
             or_(
                 DecisionMaker.company_name.ilike(q_like),
+                DecisionMaker.company_type.ilike(q_like),
+                DecisionMaker.company_website.ilike(q_like),
                 DecisionMaker.name.ilike(q_like),
                 DecisionMaker.title.ilike(q_like),
                 DecisionMaker.platform.ilike(q_like),
@@ -226,19 +236,23 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
     writer = csv.writer(output)
     writer.writerow(
         [
-            "company_name",
-            "name",
-            "title",
-            "platform",
-            "profile_url",
-            "confidence_score",
-            "reasoning",
+            "Company Name",
+            "Company Type",
+            "Company Website",
+            "Name",
+            "Title",
+            "Platform",
+            "Platform Source URL",
+            "Confidence",
+            "Reasoning",
         ]
     )
     for dm in rows:
         writer.writerow(
             [
                 dm.company_name or "",
+                getattr(dm, "company_type", "") or "",
+                getattr(dm, "company_website", "") or "",
                 dm.name or "",
                 dm.title or "",
                 dm.platform or "",

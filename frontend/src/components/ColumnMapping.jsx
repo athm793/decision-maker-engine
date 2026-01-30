@@ -3,10 +3,9 @@ import { Check, AlertCircle, ArrowRight } from 'lucide-react';
 
 const REQUIRED_FIELDS = [
   { key: 'company_name', label: 'Company Name', required: true },
-  { key: 'google_maps_url', label: 'Google Maps URL', required: false },
-  { key: 'industry', label: 'Industry', required: false },
+  { key: 'industry', label: 'Company Type', required: false },
   { key: 'location', label: 'Location', required: false },
-  { key: 'website', label: 'Website', required: false },
+  { key: 'website', label: 'Company Website', required: false },
 ];
 
 export function ColumnMapping({ previewData, onConfirm, onCancel }) {

@@ -8,6 +8,8 @@ class DecisionMaker(Base):
     id = Column(Integer, primary_key=True, index=True)
     job_id = Column(Integer, ForeignKey("jobs.id"))
     company_name = Column(String, index=True)
+    company_type = Column(String)
+    company_website = Column(String)
     name = Column(String)
     title = Column(String)
     platform = Column(String) # linkedin, google_maps, etc.

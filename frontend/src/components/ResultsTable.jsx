@@ -113,8 +113,11 @@ export function ResultsTable({
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-gray-400 uppercase bg-gray-900/50">
               <tr>
-                <th className="px-6 py-3 border-b border-gray-700">Company</th>
-                <th className="px-6 py-3 border-b border-gray-700">Name & Title</th>
+                <th className="px-6 py-3 border-b border-gray-700">Company Name</th>
+                <th className="px-6 py-3 border-b border-gray-700">Company Type</th>
+                <th className="px-6 py-3 border-b border-gray-700">Company Website</th>
+                <th className="px-6 py-3 border-b border-gray-700">Name</th>
+                <th className="px-6 py-3 border-b border-gray-700">Title</th>
                 <th className="px-6 py-3 border-b border-gray-700">Platform</th>
                 <th className="px-6 py-3 border-b border-gray-700">Confidence</th>
                 <th className="px-6 py-3 border-b border-gray-700">Reasoning</th>
@@ -126,24 +129,45 @@ export function ResultsTable({
                   <td className="px-6 py-4 whitespace-nowrap text-gray-300 font-medium">
                     {dm.company_name}
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-white font-medium">{dm.name || 'Unknown'}</span>
-                      {dm.title && <span className="text-gray-400 text-xs">{dm.title}</span>}
-                      {dm.profile_url && (
-                        <a 
-                          href={dm.profile_url} 
-                          target="_blank" 
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-400">
+                    {dm.company_type || ''}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {dm.company_website ? (
+                      <a
+                        href={dm.company_website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 text-xs flex items-center gap-1 w-fit"
+                      >
+                        {dm.company_website} <ExternalLink className="w-3 h-3" />
+                      </a>
+                    ) : (
+                      <span className="text-gray-500">—</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-white font-medium">
+                    {dm.name || 'Unknown'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-300">
+                    {dm.title || ''}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-gray-300">{dm.platform || ''}</span>
+                      {dm.profile_url ? (
+                        <a
+                          href={dm.profile_url}
+                          target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-300 text-xs flex items-center gap-1 mt-0.5 w-fit"
+                          className="text-blue-400 hover:text-blue-300 text-xs flex items-center gap-1 w-fit"
                         >
                           Open Source <ExternalLink className="w-3 h-3" />
                         </a>
+                      ) : (
+                        <span className="text-gray-500 text-xs">No source</span>
                       )}
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-400">
-                    {dm.platform}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getConfidenceBadge(dm.confidence_score)}

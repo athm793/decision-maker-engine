@@ -7,6 +7,7 @@ from app.core.database import engine, Base
 from app.core.auth import enforce_basic_auth_for_request
 from app.core.settings import settings
 import os
+from sqlalchemy import inspect, text
 
 app = FastAPI(title="Decision Maker Discovery Engine API")
 
@@ -27,6 +28,20 @@ def startup() -> None:
         raise RuntimeError("Basic Auth is enabled but BASIC_AUTH_USERNAME/BASIC_AUTH_PASSWORD are not set")
     if settings.db_auto_create:
         Base.metadata.create_all(bind=engine)
+
+    inspector = inspect(engine)
+    if "decision_makers" in inspector.get_table_names():
+        existing = {c["name"] for c in inspector.get_columns("decision_makers")}
+        missing: list[tuple[str, str]] = []
+        if "company_type" not in existing:
+            missing.append(("company_type", "TEXT"))
+        if "company_website" not in existing:
+            missing.append(("company_website", "TEXT"))
+
+        if missing:
+            with engine.begin() as conn:
+                for col, col_type in missing:
+                    conn.execute(text(f"ALTER TABLE decision_makers ADD COLUMN {col} {col_type}"))
 
 
 @app.middleware("http")
