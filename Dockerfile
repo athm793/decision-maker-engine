@@ -1,9 +1,21 @@
 # Build Stage for Frontend
 FROM node:18-alpine as frontend-build
 WORKDIR /app/frontend
+
+# Copy package files first for better caching
 COPY frontend/package*.json ./
 RUN npm install
-COPY frontend/ ./
+
+# Copy configuration files explicitly
+COPY frontend/vite.config.js ./
+COPY frontend/tailwind.config.js ./
+COPY frontend/postcss.config.cjs ./
+COPY frontend/index.html ./
+
+# Copy source code
+COPY frontend/src/ ./src/
+
+# Run build
 RUN npm run build
 
 # Runtime Stage
@@ -11,9 +23,6 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies for Playwright
-# We use the playwright install-deps command or install manually
-# Using the official playwright python image is safer but large. 
-# Let's start with slim and install what's needed.
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
