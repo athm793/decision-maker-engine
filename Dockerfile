@@ -2,6 +2,9 @@
 FROM node:18-alpine as frontend-build
 WORKDIR /app/frontend
 
+# Ensure we install dev dependencies
+ENV NODE_ENV=development
+
 # Copy package files first for better caching
 COPY frontend/package*.json ./
 RUN npm install
