@@ -115,10 +115,11 @@ export function ResultsTable({
               <tr>
                 <th className="px-6 py-3 border-b border-gray-700">Company Name</th>
                 <th className="px-6 py-3 border-b border-gray-700">Company Type</th>
-                <th className="px-6 py-3 border-b border-gray-700">Company Address</th>
+                <th className="px-6 py-3 border-b border-gray-700">Company City</th>
+                <th className="px-6 py-3 border-b border-gray-700">Company Country</th>
                 <th className="px-6 py-3 border-b border-gray-700">Company Website</th>
-                <th className="px-6 py-3 border-b border-gray-700">Name</th>
-                <th className="px-6 py-3 border-b border-gray-700">Title</th>
+                <th className="px-6 py-3 border-b border-gray-700">Contact Name</th>
+                <th className="px-6 py-3 border-b border-gray-700">Contact Job Title</th>
                 <th className="px-6 py-3 border-b border-gray-700">Platform</th>
                 <th className="px-6 py-3 border-b border-gray-700">Confidence</th>
                 <th className="px-6 py-3 border-b border-gray-700">Reasoning</th>
@@ -134,7 +135,10 @@ export function ResultsTable({
                     {dm.company_type || ''}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-400">
-                    {dm.company_address || ''}
+                    {dm.company_city || ''}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-400">
+                    {dm.company_country || ''}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {dm.company_website ? (

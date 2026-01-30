@@ -33,21 +33,27 @@ def _is_url_like(raw: object) -> bool:
         return True
     return False
 
-def _looks_like_address(raw: object) -> bool:
-    v = str(raw or "").strip()
-    if len(v) < 6:
-        return False
-    if re.search(r"\b(po box|p\.?o\.?\s*box)\b", v, flags=re.IGNORECASE):
-        return True
-    if re.search(r"\b\d{5}(-\d{4})?\b", v) and "," in v:
-        return True
-    if re.search(r"\b\d{1,6}\s+\S+", v) and re.search(
-        r"\b(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|hwy|highway|suite|ste|apt|unit|pl|place|ct|court|cir|circle)\b",
-        v,
-        flags=re.IGNORECASE,
-    ):
-        return True
-    return False
+def _text(raw: object) -> str:
+    return str(raw or "").strip()
+
+def _non_empty(raw: object, default: str) -> str:
+    v = _text(raw)
+    return v if v else default
+
+def _split_location_to_city_country(raw: object) -> tuple[str, str]:
+    v = _text(raw)
+    if not v:
+        return ("", "")
+    parts = [p.strip() for p in v.split(",") if p.strip()]
+    if len(parts) >= 2:
+        city = parts[0]
+        country = parts[-1]
+        if len(country) == 2 and country.isupper():
+            country = ""
+        if re.search(r"\d", country):
+            country = ""
+        return (city, country)
+    return ("", "")
 
 
 class CreditResponse(BaseModel):
@@ -56,18 +62,32 @@ class CreditResponse(BaseModel):
 class DecisionMakerResponse(BaseModel):
     id: int
     company_name: str
-    company_type: str | None = None
-    company_address: str | None = None
-    company_website: str | None = None
-    name: str | None
-    title: str | None
-    platform: str | None
-    profile_url: str | None
-    confidence_score: str | None
-    reasoning: str | None
-    
-    class Config:
-        from_attributes = True
+    company_type: str
+    company_city: str
+    company_country: str
+    company_website: str
+    name: str
+    title: str
+    platform: str
+    profile_url: str
+    confidence_score: str
+    reasoning: str
+
+def _dm_to_response(dm: DecisionMaker) -> DecisionMakerResponse:
+    return DecisionMakerResponse(
+        id=int(dm.id),
+        company_name=_non_empty(getattr(dm, "company_name", ""), "Unknown"),
+        company_type=_non_empty(getattr(dm, "company_type", ""), "Unknown"),
+        company_city=_non_empty(getattr(dm, "company_city", ""), "Unknown"),
+        company_country=_non_empty(getattr(dm, "company_country", ""), "Unknown"),
+        company_website=_non_empty(getattr(dm, "company_website", ""), "N/A"),
+        name=_non_empty(getattr(dm, "name", ""), "Unknown"),
+        title=_non_empty(getattr(dm, "title", ""), "Unknown"),
+        platform=_non_empty(getattr(dm, "platform", ""), "Unknown"),
+        profile_url=_text(getattr(dm, "profile_url", "")),
+        confidence_score=_non_empty(getattr(dm, "confidence_score", ""), "UNKNOWN"),
+        reasoning=_non_empty(getattr(dm, "reasoning", ""), "N/A"),
+    )
 
 
 class DecisionMakerListResponse(BaseModel):
@@ -116,7 +136,8 @@ async def _process_job_task(job_id: int):
         gmaps_col = mappings.get("google_maps_url", "")
         website_col = mappings.get("website", "")
         company_type_col = mappings.get("industry", "")
-        address_col = mappings.get("address", "")
+        city_col = mappings.get("city", "")
+        country_col = mappings.get("country", "")
         
         logger.info(
             "process_job_task.options job_id=%s selected_platforms=%s max_total=%s max_per_company=%s credits_per_contact=%s",
@@ -143,13 +164,19 @@ async def _process_job_task(job_id: int):
             google_maps_url = company.get(gmaps_col) if gmaps_col else None
             website = company.get(website_col) if website_col else None
             company_type = company.get(company_type_col) if company_type_col else None
-            company_address = company.get(address_col) if address_col else None
+            company_city = company.get(city_col) if city_col else None
+            company_country = company.get(country_col) if country_col else None
 
             if not website and _is_url_like(company_name):
                 website = company_name
                 company_name = ""
-            if not company_address and _looks_like_address(location):
-                company_address = location
+
+            if not company_city or not company_country:
+                inferred_city, inferred_country = _split_location_to_city_country(location)
+                if not company_city and inferred_city:
+                    company_city = inferred_city
+                if not company_country and inferred_country:
+                    company_country = inferred_country
 
             logger.info(
                 "process_job_task.company_start job_id=%s idx=%s raw_company_name=%s location=%s",
@@ -159,29 +186,28 @@ async def _process_job_task(job_id: int):
                 (str(location)[:200] if location is not None else ""),
             )
 
+            location_hint = _text(location) or ", ".join([p for p in [_text(company_city), _text(company_country)] if p])
             enriched = await scraper.enrich_company(
                 company_name=company_name,
-                location=location,
+                location=location_hint,
                 google_maps_url=google_maps_url,
                 website=website,
             )
             company_name = (enriched.get("company_name") or company_name or "").strip()
             company_type = (company_type or enriched.get("company_type") or "").strip() or None
             website = (website or enriched.get("company_website") or "").strip() or None
-            company_address = (company_address or enriched.get("company_address") or "").strip() or None
-            if company_type and _looks_like_address(company_type):
-                if not company_address:
-                    company_address = company_type
-                company_type = None
+            company_city = (company_city or enriched.get("company_city") or "").strip() or None
+            company_country = (company_country or enriched.get("company_country") or "").strip() or None
 
             logger.info(
-                "process_job_task.company_enriched job_id=%s idx=%s company_name=%s website=%s company_type=%s address=%s",
+                "process_job_task.company_enriched job_id=%s idx=%s company_name=%s website=%s company_type=%s city=%s country=%s",
                 job_id,
                 idx,
                 (company_name[:200] if company_name else ""),
                 ((website or "")[:200]),
                 ((company_type or "")[:200]),
-                ((company_address or "")[:200]),
+                ((company_city or "")[:200]),
+                ((company_country or "")[:200]),
             )
             
             # Scrape
@@ -231,18 +257,28 @@ async def _process_job_task(job_id: int):
 
                 credit_state.balance -= platforms_multiplier
 
+                company_name_out = _non_empty(company_name, "Unknown")
+                company_type_out = _non_empty(company_type, "Unknown")
+                company_city_out = _non_empty(company_city, "Unknown")
+                company_country_out = _non_empty(company_country, "Unknown")
+                website_out = _non_empty(website, "N/A")
+                name_out = _non_empty(res.get("name"), "Unknown")
+                title_out = _non_empty(res.get("title"), "Unknown")
+                platform_out = _non_empty(res.get("platform", "LinkedIn"), "Unknown")
+
                 dm = DecisionMaker(
                     job_id=job.id,
-                    company_name=company_name,
-                    company_type=company_type,
-                    company_address=company_address,
-                    company_website=website,
-                    name=res.get("name"),
-                    title=res.get("title"),
-                    platform=res.get("platform", "LinkedIn"),
-                    profile_url=res.get("profile_url"),
+                    company_name=company_name_out,
+                    company_type=company_type_out,
+                    company_city=company_city_out,
+                    company_country=company_country_out,
+                    company_website=website_out,
+                    name=name_out,
+                    title=title_out,
+                    platform=platform_out,
+                    profile_url=_text(res.get("profile_url")),
                     confidence_score=res.get("confidence"),
-                    reasoning=res.get("reasoning")
+                    reasoning=res.get("reasoning"),
                 )
                 db.add(dm)
                 job.decision_makers_found += 1
@@ -393,7 +429,7 @@ async def cancel_job(job_id: int, db: Session = Depends(get_db)):
 @router.get("/jobs/{job_id}/results", response_model=List[DecisionMakerResponse])
 async def get_job_results(job_id: int, db: Session = Depends(get_db)):
     results = db.query(DecisionMaker).filter(DecisionMaker.job_id == job_id).all()
-    return results
+    return [_dm_to_response(dm) for dm in results]
 
 
 @router.get("/jobs/{job_id}/results/paged", response_model=DecisionMakerListResponse)
@@ -414,7 +450,8 @@ async def get_job_results_paged(
             or_(
                 DecisionMaker.company_name.ilike(q_like),
                 DecisionMaker.company_type.ilike(q_like),
-                DecisionMaker.company_address.ilike(q_like),
+                DecisionMaker.company_city.ilike(q_like),
+                DecisionMaker.company_country.ilike(q_like),
                 DecisionMaker.company_website.ilike(q_like),
                 DecisionMaker.name.ilike(q_like),
                 DecisionMaker.title.ilike(q_like),
@@ -425,7 +462,8 @@ async def get_job_results_paged(
         )
 
     total = query.count()
-    items = query.order_by(DecisionMaker.id.desc()).offset(offset).limit(limit).all()
+    rows = query.order_by(DecisionMaker.id.desc()).offset(offset).limit(limit).all()
+    items = [_dm_to_response(dm) for dm in rows]
     return DecisionMakerListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -439,7 +477,8 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
             or_(
                 DecisionMaker.company_name.ilike(q_like),
                 DecisionMaker.company_type.ilike(q_like),
-                DecisionMaker.company_address.ilike(q_like),
+                DecisionMaker.company_city.ilike(q_like),
+                DecisionMaker.company_country.ilike(q_like),
                 DecisionMaker.company_website.ilike(q_like),
                 DecisionMaker.name.ilike(q_like),
                 DecisionMaker.title.ilike(q_like),
@@ -457,10 +496,11 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
         [
             "Company Name",
             "Company Type",
-            "Company Address",
+            "Company City",
+            "Company Country",
             "Company Website",
-            "Name",
-            "Title",
+            "Contact Name",
+            "Contact Job Title",
             "Platform",
             "Platform Source URL",
             "Confidence",
@@ -470,16 +510,17 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
     for dm in rows:
         writer.writerow(
             [
-                dm.company_name or "",
-                getattr(dm, "company_type", "") or "",
-                getattr(dm, "company_address", "") or "",
-                getattr(dm, "company_website", "") or "",
-                dm.name or "",
-                dm.title or "",
-                dm.platform or "",
-                dm.profile_url or "",
-                dm.confidence_score or "",
-                dm.reasoning or "",
+                _non_empty(getattr(dm, "company_name", ""), "Unknown"),
+                _non_empty(getattr(dm, "company_type", ""), "Unknown"),
+                _non_empty(getattr(dm, "company_city", ""), "Unknown"),
+                _non_empty(getattr(dm, "company_country", ""), "Unknown"),
+                _non_empty(getattr(dm, "company_website", ""), "N/A"),
+                _non_empty(getattr(dm, "name", ""), "Unknown"),
+                _non_empty(getattr(dm, "title", ""), "Unknown"),
+                _non_empty(getattr(dm, "platform", ""), "Unknown"),
+                _text(getattr(dm, "profile_url", "")),
+                _non_empty(getattr(dm, "confidence_score", ""), "UNKNOWN"),
+                _non_empty(getattr(dm, "reasoning", ""), "N/A"),
             ]
         )
 

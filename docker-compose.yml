@@ -13,6 +13,14 @@ services:
       DB_AUTO_CREATE: "true"
       DATABASE_URL: sqlite:////data/sql_app.db
       CORS_ALLOW_ORIGINS: "*"
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      OPENROUTER_SITE_URL: ${OPENROUTER_SITE_URL:-}
+      OPENROUTER_APP_NAME: ${OPENROUTER_APP_NAME:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
     volumes:
       - web_data:/data
 

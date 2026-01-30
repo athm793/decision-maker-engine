@@ -11,6 +11,25 @@ from app.services.web_search import WebSearchService, guess_person_name_from_tit
 
 logger = logging.getLogger(__name__)
 
+def _infer_city_country_from_search_results(items: list[dict[str, Any]]) -> tuple[str, str]:
+    city = ""
+    country = ""
+    rx = re.compile(r"\b([A-Z][a-zA-Z .'-]{2,}),\s*([A-Z][a-zA-Z .'-]{2,})\b")
+    for item in items:
+        snippet = str(item.get("snippet") or "")
+        title = str(item.get("title") or "")
+        text = f"{title} {snippet}"
+        for m in rx.finditer(text):
+            a = m.group(1).strip()
+            b = m.group(2).strip()
+            if not city and a and not re.search(r"\d", a):
+                city = a
+            if not country and b and not re.search(r"\d", b) and len(b) > 2:
+                country = b
+        if city and country:
+            break
+    return (city, country)
+
 class ScraperService:
     def __init__(self):
         self.browser = None
@@ -75,6 +94,15 @@ class ScraperService:
         if not self.browser:
             await self.start()
 
+        search_results: list[dict[str, Any]] = []
+        if self.web_search is not None:
+            q = " ".join([p for p in [str(company_name or "").strip(), str(location or "").strip(), str(website or "").strip()] if p])
+            if q:
+                try:
+                    search_results = await self.web_search.search_duckduckgo(q, limit=5)
+                except Exception:
+                    search_results = []
+
         if self.llm is not None:
             logger.info(
                 "scraper.enrich_company.llm company_name=%s location=%s website=%s",
@@ -87,26 +115,35 @@ class ScraperService:
                 location=location,
                 google_maps_url=google_maps_url,
                 website=website,
+                search_results=search_results,
             )
             name = (enriched.get("company_name") or "").strip()
             site = (enriched.get("company_website") or "").strip()
             ctype = (enriched.get("company_type") or "").strip()
-            addr = (enriched.get("company_address") or "").strip()
+            city = (enriched.get("company_city") or "").strip()
+            country = (enriched.get("company_country") or "").strip()
+            if not city or not country:
+                inferred_city, inferred_country = _infer_city_country_from_search_results(search_results)
+                city = city or inferred_city
+                country = country or inferred_country
             if re.search(r"https?://|www\.", name, flags=re.IGNORECASE):
                 name = ""
             return {
                 "company_name": name,
                 "company_website": site,
                 "company_type": ctype,
-                "company_address": addr,
+                "company_city": city,
+                "company_country": country,
             }
 
         guessed = self._guess_company_name_from_website(website)
+        inferred_city, inferred_country = _infer_city_country_from_search_results(search_results)
         return {
             "company_name": guessed,
             "company_website": (website or "").strip(),
             "company_type": "",
-            "company_address": "",
+            "company_city": inferred_city,
+            "company_country": inferred_country,
         }
 
     async def search_linkedin(self, company_name: str, location: str = "") -> List[Dict[str, Any]]:

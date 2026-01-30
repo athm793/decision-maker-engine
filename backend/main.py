@@ -62,8 +62,10 @@ def startup() -> None:
         missing: list[tuple[str, str]] = []
         if "company_type" not in existing:
             missing.append(("company_type", "TEXT"))
-        if "company_address" not in existing:
-            missing.append(("company_address", "TEXT"))
+        if "company_city" not in existing:
+            missing.append(("company_city", "TEXT"))
+        if "company_country" not in existing:
+            missing.append(("company_country", "TEXT"))
         if "company_website" not in existing:
             missing.append(("company_website", "TEXT"))
 

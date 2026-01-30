@@ -80,4 +80,10 @@ Open:
 - BASIC_AUTH_USERNAME / BASIC_AUTH_PASSWORD
 - DATABASE_URL: SQLAlchemy URL (defaults to SQLite file)
 - CORS_ALLOW_ORIGINS: comma-separated list or "*" (defaults to localhost dev)
-- LLM_API_KEY / LLM_BASE_URL / LLM_MODEL: optional LLM enrichment
+- OpenRouter (recommended)
+  - OPENROUTER_API_KEY: OpenRouter API key
+  - OPENROUTER_MODEL: e.g. openai/gpt-4o-mini
+  - OPENROUTER_SITE_URL / OPENROUTER_APP_NAME: optional headers for OpenRouter attribution
+- Generic OpenAI-compatible (advanced)
+  - LLM_API_KEY / LLM_BASE_URL / LLM_MODEL / LLM_TEMPERATURE
+  - PERPLEXITY_API_KEY: accepted as a legacy alias for LLM_API_KEY

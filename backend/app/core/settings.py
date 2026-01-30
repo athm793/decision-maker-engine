@@ -29,9 +29,14 @@ class Settings:
         self.basic_auth_password = _getenv("BASIC_AUTH_PASSWORD")
         self.cors_allow_origins = _getenv("CORS_ALLOW_ORIGINS")
 
-        self.llm_api_key = _getenv("LLM_API_KEY")
-        self.llm_base_url = _getenv("LLM_BASE_URL")
-        self.llm_model = _getenv("LLM_MODEL")
+        self.openrouter_api_key = _getenv("OPENROUTER_API_KEY")
+        self.openrouter_model = _getenv("OPENROUTER_MODEL")
+        self.openrouter_site_url = _getenv("OPENROUTER_SITE_URL")
+        self.openrouter_app_name = _getenv("OPENROUTER_APP_NAME")
+
+        self.llm_api_key = _getenv("LLM_API_KEY") or self.openrouter_api_key or _getenv("PERPLEXITY_API_KEY")
+        self.llm_base_url = _getenv("LLM_BASE_URL") or ("https://openrouter.ai/api/v1" if self.openrouter_api_key else None)
+        self.llm_model = _getenv("LLM_MODEL") or self.openrouter_model
         self.llm_temperature = float(_getenv("LLM_TEMPERATURE", "0.2") or "0.2")
 
     @property
