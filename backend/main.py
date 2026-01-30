@@ -1,24 +1,53 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from app.api.endpoints import upload, jobs
 from app.core.database import engine, Base
+from app.core.auth import enforce_basic_auth_for_request
+from app.core.settings import settings
 import os
-
-# Create database tables
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Decision Maker Discovery Engine API")
 
 # Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:8000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+origins = settings.resolved_cors_origins()
+if origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+@app.on_event("startup")
+def startup() -> None:
+    if settings.basic_auth_enabled and (settings.basic_auth_username is None or settings.basic_auth_password is None):
+        raise RuntimeError("Basic Auth is enabled but BASIC_AUTH_USERNAME/BASIC_AUTH_PASSWORD are not set")
+    if settings.db_auto_create:
+        Base.metadata.create_all(bind=engine)
+
+
+@app.middleware("http")
+async def basic_auth_middleware(request: Request, call_next):
+    if request.url.path == "/health":
+        return await call_next(request)
+
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    try:
+        enforce_basic_auth_for_request(request)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=exc.headers,
+        )
+
+    return await call_next(request)
+
 
 # API Routes
 app.include_router(upload.router, prefix="/api", tags=["upload"])

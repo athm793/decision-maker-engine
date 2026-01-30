@@ -56,17 +56,18 @@ function App() {
     formData.append('file', selectedFile);
 
     try {
-      const response = await axios.post('http://localhost:8000/api/upload/preview', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      const response = await axios.post('/api/upload/preview', formData);
 
       setPreviewData(response.data);
       setStep('mapping');
     } catch (err) {
       console.error('Upload failed:', err);
-      setError(err.response?.data?.detail || 'Failed to upload file. Please try again.');
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      const message =
+        (status ? `Upload failed (${status}). ` : 'Upload failed. ') +
+        (detail || err?.message || 'Please try again.');
+      setError(message);
     } finally {
       setIsUploading(false);
     }
