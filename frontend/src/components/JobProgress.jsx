@@ -66,6 +66,30 @@ export function JobProgress({ job }) {
           </div>
         </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="bg-gray-900/40 border border-gray-700 rounded-lg p-3">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Platforms</div>
+            <div className="text-sm text-gray-200 mt-1">
+              {(job.selected_platforms && job.selected_platforms.length > 0) ? job.selected_platforms.join(', ') : 'default'}
+            </div>
+          </div>
+          <div className="bg-gray-900/40 border border-gray-700 rounded-lg p-3">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Limits</div>
+            <div className="text-sm text-gray-200 mt-1">
+              {job.max_contacts_total || '—'} total • {job.max_contacts_per_company || '—'} / company
+            </div>
+          </div>
+          <div className="bg-gray-900/40 border border-gray-700 rounded-lg p-3">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Credits Spent</div>
+            <div className="text-sm text-gray-200 mt-1">
+              {job.credits_spent ?? 0}
+            </div>
+            {job.stop_reason === 'credits_exhausted' && (
+              <div className="text-xs text-yellow-300 mt-1">Stopped: credits exhausted</div>
+            )}
+          </div>
+        </div>
+
         {/* Progress Bar */}
         <div className="space-y-2">
           <div className="flex justify-between text-sm text-gray-400">

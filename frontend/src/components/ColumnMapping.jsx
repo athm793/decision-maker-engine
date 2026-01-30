@@ -8,15 +8,32 @@ const REQUIRED_FIELDS = [
   { key: 'website', label: 'Company Website', required: false },
 ];
 
-export function ColumnMapping({ previewData, onConfirm, onCancel }) {
+const PLATFORM_OPTIONS = [
+  { key: 'google_maps', label: 'Google Maps' },
+  { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'facebook', label: 'Facebook' },
+  { key: 'instagram', label: 'Instagram' },
+  { key: 'yelp', label: 'Yelp' },
+];
+
+export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance }) {
   const [mappings, setMappings] = useState({});
   const [errors, setErrors] = useState([]);
+  const [companyNameHint, setCompanyNameHint] = useState(null);
+  const [selectedPlatforms, setSelectedPlatforms] = useState(['google_maps', 'linkedin']);
+  const [maxContactsTotal, setMaxContactsTotal] = useState(50);
+  const [maxContactsPerCompany, setMaxContactsPerCompany] = useState(3);
 
   useEffect(() => {
     if (previewData?.suggested_mappings) {
       setMappings(previewData.suggested_mappings);
     }
   }, [previewData]);
+
+  useEffect(() => {
+    setErrors([]);
+    setCompanyNameHint(null);
+  }, [mappings]);
 
   const handleMappingChange = (targetField, sourceColumn) => {
     setMappings(prev => ({
@@ -37,12 +54,44 @@ export function ColumnMapping({ previewData, onConfirm, onCancel }) {
       }
     });
 
+    const companyCol = mappings.company_name;
+    if (companyCol) {
+      const lower = companyCol.toLowerCase();
+      if (/(url|website|domain|http|www|link)/i.test(lower)) {
+        newErrors.push('company_name');
+        setCompanyNameHint('Company Name must be the business name, not a website/url column.');
+      } else {
+        setCompanyNameHint(null);
+      }
+    }
+
+    if (!selectedPlatforms || selectedPlatforms.length === 0) {
+      newErrors.push('platforms');
+    }
+
+    if (!maxContactsTotal || maxContactsTotal < 1) {
+      newErrors.push('max_total');
+    }
+
+    if (!maxContactsPerCompany || maxContactsPerCompany < 1) {
+      newErrors.push('max_per_company');
+    }
+
+    if (maxContactsPerCompany > maxContactsTotal) {
+      newErrors.push('max_per_company');
+      setCompanyNameHint((prev) => prev || 'Per-company limit cannot exceed overall limit.');
+    }
+
     if (newErrors.length > 0) {
       setErrors(newErrors);
       return;
     }
 
-    onConfirm(mappings);
+    onConfirm(mappings, {
+      selected_platforms: selectedPlatforms,
+      max_contacts_total: maxContactsTotal,
+      max_contacts_per_company: maxContactsPerCompany,
+    });
   };
 
   if (!previewData) return null;
@@ -73,6 +122,9 @@ export function ColumnMapping({ previewData, onConfirm, onCancel }) {
                     <span className="text-xs text-red-400">Required</span>
                   )}
                 </label>
+                {field.key === 'company_name' && companyNameHint && (
+                  <div className="text-xs text-yellow-300">{companyNameHint}</div>
+                )}
                 <select
                   value={mappings[field.key] || ''}
                   onChange={(e) => handleMappingChange(field.key, e.target.value)}
@@ -89,6 +141,70 @@ export function ColumnMapping({ previewData, onConfirm, onCancel }) {
                 </select>
               </div>
             ))}
+
+            <div className="pt-6">
+              <h3 className="font-medium text-gray-300 mb-3">Research Options</h3>
+
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <div className="text-xs text-gray-400">Platforms</div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {PLATFORM_OPTIONS.map((p) => (
+                      <label key={p.key} className="flex items-center gap-2 text-sm text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={selectedPlatforms.includes(p.key)}
+                          onChange={(e) => {
+                            setSelectedPlatforms((prev) => {
+                              if (e.target.checked) return [...prev, p.key];
+                              return prev.filter((x) => x !== p.key);
+                            });
+                          }}
+                          className="accent-blue-500"
+                        />
+                        {p.label}
+                      </label>
+                    ))}
+                  </div>
+                  {errors.includes('platforms') && (
+                    <div className="text-xs text-red-400">Select at least one platform.</div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs text-gray-400">Overall Contact Finding Limit</div>
+                  <input
+                    type="number"
+                    min={1}
+                    value={maxContactsTotal}
+                    onChange={(e) => setMaxContactsTotal(Number(e.target.value))}
+                    className={
+                      'w-full bg-gray-900 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 transition-colors ' +
+                      (errors.includes('max_total') ? 'border-red-500 focus:ring-red-500/20' : 'border-gray-700 focus:border-blue-500 focus:ring-blue-500/20')
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs text-gray-400">Contacts Found Per Company Limit</div>
+                  <input
+                    type="number"
+                    min={1}
+                    value={maxContactsPerCompany}
+                    onChange={(e) => setMaxContactsPerCompany(Number(e.target.value))}
+                    className={
+                      'w-full bg-gray-900 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 transition-colors ' +
+                      (errors.includes('max_per_company') ? 'border-red-500 focus:ring-red-500/20' : 'border-gray-700 focus:border-blue-500 focus:ring-blue-500/20')
+                    }
+                  />
+                </div>
+
+                <div className="text-xs text-gray-400">
+                  Estimated credits: {Math.max(1, selectedPlatforms.length) * maxContactsTotal}
+                  {typeof creditsBalance === 'number' && ` • Available: ${creditsBalance}`}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Data Preview */}

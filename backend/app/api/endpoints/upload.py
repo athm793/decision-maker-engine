@@ -14,30 +14,49 @@ COLUMN_KEYWORDS = {
     "website": ["website", "site", "web"]
 }
 
+COMPANY_NAME_NEGATIVE = ["url", "website", "web", "domain", "http", "link"]
+
 def detect_column_mapping(columns: list) -> Dict[str, str]:
-    mapping = {}
-    used_cols = set()
-    
-    for target_field, keywords in COLUMN_KEYWORDS.items():
+    mapping: Dict[str, str] = {}
+    used_cols: set[str] = set()
+
+    def score(target: str, col: str) -> int:
+        c = col.lower()
+        s = 0
+        for kw in COLUMN_KEYWORDS.get(target, []):
+            if c == kw:
+                s += 50
+            if kw in c:
+                s += 10
+
+        if target == "company_name":
+            if any(bad in c for bad in COMPANY_NAME_NEGATIVE):
+                s -= 100
+            if "company" in c:
+                s += 25
+            if c in {"name", "company"}:
+                s += 25
+
+        if target in {"website", "google_maps_url"}:
+            if any(k in c for k in ["url", "http", "www", "link"]):
+                s += 15
+        return s
+
+    for target_field in COLUMN_KEYWORDS.keys():
         best_match = None
-        
-        # Exact match first
+        best_score = -10**9
         for col in columns:
-            if col.lower() in keywords and col not in used_cols:
+            if col in used_cols:
+                continue
+            sc = score(target_field, col)
+            if sc > best_score:
+                best_score = sc
                 best_match = col
-                break
-        
-        # Partial match if no exact match
-        if not best_match:
-            for col in columns:
-                if col not in used_cols and any(k in col.lower() for k in keywords):
-                    best_match = col
-                    break
-        
-        if best_match:
+
+        if best_match and best_score > 0:
             mapping[target_field] = best_match
             used_cols.add(best_match)
-            
+
     return mapping
 
 @router.post("/upload/preview", response_model=FilePreviewResponse)

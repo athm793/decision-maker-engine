@@ -30,6 +30,25 @@ def startup() -> None:
         Base.metadata.create_all(bind=engine)
 
     inspector = inspect(engine)
+    if "jobs" in inspector.get_table_names():
+        existing = {c["name"] for c in inspector.get_columns("jobs")}
+        missing: list[tuple[str, str]] = []
+        if "selected_platforms" not in existing:
+            missing.append(("selected_platforms", "TEXT"))
+        if "max_contacts_total" not in existing:
+            missing.append(("max_contacts_total", "INTEGER"))
+        if "max_contacts_per_company" not in existing:
+            missing.append(("max_contacts_per_company", "INTEGER"))
+        if "credits_spent" not in existing:
+            missing.append(("credits_spent", "INTEGER"))
+        if "stop_reason" not in existing:
+            missing.append(("stop_reason", "TEXT"))
+
+        if missing:
+            with engine.begin() as conn:
+                for col, col_type in missing:
+                    conn.execute(text(f"ALTER TABLE jobs ADD COLUMN {col} {col_type}"))
+
     if "decision_makers" in inspector.get_table_names():
         existing = {c["name"] for c in inspector.get_columns("decision_makers")}
         missing: list[tuple[str, str]] = []
@@ -42,6 +61,13 @@ def startup() -> None:
             with engine.begin() as conn:
                 for col, col_type in missing:
                     conn.execute(text(f"ALTER TABLE decision_makers ADD COLUMN {col} {col_type}"))
+
+    if "credit_state" in inspector.get_table_names():
+        with engine.begin() as conn:
+            row = conn.execute(text("SELECT id, balance FROM credit_state WHERE id = 1")).fetchone()
+            if row is None:
+                initial = int(os.getenv("CREDITS_INITIAL_BALANCE", "10000") or "10000")
+                conn.execute(text("INSERT INTO credit_state (id, balance) VALUES (1, :b)"), {"b": initial})
 
 
 @app.middleware("http")

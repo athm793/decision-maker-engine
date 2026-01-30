@@ -29,6 +29,12 @@ class Job(Base):
     # In a real app, this might be a separate table or stored in S3/File
     companies_data = Column(JSON)
 
+    selected_platforms = Column(JSON)
+    max_contacts_total = Column(Integer, default=50)
+    max_contacts_per_company = Column(Integer, default=3)
+    credits_spent = Column(Integer, default=0)
+    stop_reason = Column(String)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

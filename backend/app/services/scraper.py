@@ -67,6 +67,95 @@ class ScraperService:
             
         return results
 
+    async def search_platform(self, platform: str, company_name: str, location: str = "") -> List[Dict[str, Any]]:
+        if platform == "linkedin":
+            return await self.search_linkedin(company_name, location)
+
+        if not self.web_search:
+            return []
+
+        if platform == "google_maps":
+            q = f"{company_name} {location} site:google.com/maps"
+            items = await self.web_search.search_duckduckgo(q, limit=3)
+            out: list[dict[str, Any]] = []
+            for item in items:
+                url = item.get("url")
+                if not url:
+                    continue
+                out.append(
+                    {
+                        "name": "",
+                        "title": "",
+                        "platform": "Google Maps",
+                        "profile_url": url,
+                        "confidence": "LOW",
+                        "reasoning": item.get("snippet") or item.get("title"),
+                    }
+                )
+            return out
+
+        if platform == "facebook":
+            q = f"{company_name} {location} (CEO OR founder OR owner) site:facebook.com"
+            items = await self.web_search.search_duckduckgo(q, limit=3)
+            out: list[dict[str, Any]] = []
+            for item in items:
+                url = item.get("url")
+                if not url:
+                    continue
+                out.append(
+                    {
+                        "name": "",
+                        "title": "",
+                        "platform": "Facebook",
+                        "profile_url": url,
+                        "confidence": "LOW",
+                        "reasoning": item.get("snippet") or item.get("title"),
+                    }
+                )
+            return out
+
+        if platform == "instagram":
+            q = f"{company_name} {location} (founder OR ceo OR owner) site:instagram.com"
+            items = await self.web_search.search_duckduckgo(q, limit=3)
+            out: list[dict[str, Any]] = []
+            for item in items:
+                url = item.get("url")
+                if not url:
+                    continue
+                out.append(
+                    {
+                        "name": "",
+                        "title": "",
+                        "platform": "Instagram",
+                        "profile_url": url,
+                        "confidence": "LOW",
+                        "reasoning": item.get("snippet") or item.get("title"),
+                    }
+                )
+            return out
+
+        if platform == "yelp":
+            q = f"{company_name} {location} site:yelp.com"
+            items = await self.web_search.search_duckduckgo(q, limit=3)
+            out: list[dict[str, Any]] = []
+            for item in items:
+                url = item.get("url")
+                if not url:
+                    continue
+                out.append(
+                    {
+                        "name": "",
+                        "title": "",
+                        "platform": "Yelp",
+                        "profile_url": url,
+                        "confidence": "LOW",
+                        "reasoning": item.get("snippet") or item.get("title"),
+                    }
+                )
+            return out
+
+        return []
+
     async def search_google_maps(self, company_name: str, location: str = "") -> List[Dict[str, Any]]:
         results = []
         try:
@@ -100,9 +189,21 @@ class ScraperService:
         location: str = "",
         google_maps_url: str | None = None,
         website: str | None = None,
+        platforms: list[str] | None = None,
+        max_people: int | None = None,
+        remaining_total: int | None = None,
     ) -> List[Dict[str, Any]]:
         if not self.browser:
             await self.start()
+
+        selected = platforms or []
+        selected = [p for p in selected if isinstance(p, str)]
+        max_people = max_people or 3
+        if remaining_total is not None:
+            max_people = min(max_people, max(0, remaining_total))
+
+        if max_people <= 0:
+            return []
 
         if self.llm is not None:
             people = await self.llm.research_decision_makers(
@@ -110,7 +211,8 @@ class ScraperService:
                 location=location,
                 google_maps_url=google_maps_url,
                 website=website,
-                max_people=3,
+                platforms=selected,
+                max_people=max_people,
             )
             out: list[dict[str, Any]] = []
             for p in people:
@@ -124,6 +226,22 @@ class ScraperService:
                         "reasoning": p.get("reasoning"),
                     }
                 )
+            return out[:max_people]
+
+        if selected:
+            out: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for platform in selected:
+                items = await self.search_platform(platform, company_name, location)
+                for item in items:
+                    url = item.get("profile_url") or ""
+                    if url and url in seen:
+                        continue
+                    if url:
+                        seen.add(url)
+                    out.append(item)
+                    if len(out) >= max_people:
+                        return out
             return out
             
         linkedin_results = await self.search_linkedin(company_name, location)

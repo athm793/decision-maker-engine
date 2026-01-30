@@ -29,6 +29,7 @@ function App() {
 
   const [jobHistory, setJobHistory] = useState([]);
   const [isJobHistoryLoading, setIsJobHistoryLoading] = useState(false);
+  const [creditsBalance, setCreditsBalance] = useState(null);
 
   // Polling Effect
   useEffect(() => {
@@ -111,6 +112,21 @@ function App() {
     }
   }, [step]);
 
+  useEffect(() => {
+    const fetchCredits = async () => {
+      try {
+        const response = await axios.get('/api/credits');
+        setCreditsBalance(response.data.balance);
+      } catch (err) {
+        setCreditsBalance(null);
+      }
+    };
+
+    if (step === 'mapping') {
+      fetchCredits();
+    }
+  }, [step]);
+
   const handleStopJob = async () => {
     if (!jobId || isCancelling) return;
     setIsCancelling(true);
@@ -154,7 +170,7 @@ function App() {
     }
   };
 
-  const handleMappingConfirm = async (mappings) => {
+  const handleMappingConfirm = async (mappings, options) => {
     try {
       setStep('creating_job');
       
@@ -179,7 +195,10 @@ function App() {
             const response = await axios.post('/api/jobs', {
                 filename: file.name,
                 mappings: mappings,
-                file_content: data
+                file_content: data,
+                selected_platforms: options?.selected_platforms || [],
+                max_contacts_total: options?.max_contacts_total || 50,
+                max_contacts_per_company: options?.max_contacts_per_company || 3,
             });
             
             setJobId(response.data.id);
@@ -318,6 +337,7 @@ function App() {
             previewData={previewData}
             onConfirm={handleMappingConfirm}
             onCancel={handleCancel}
+            creditsBalance={creditsBalance}
           />
         )}
         

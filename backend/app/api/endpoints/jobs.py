@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db, SessionLocal
 from app.models.job import Job, JobStatus
 from app.models.decision_maker import DecisionMaker
+from app.models.credit_state import CreditState
 from app.schemas.job import JobCreate, JobResponse
 from app.services.scraper import ScraperService
 import json
@@ -12,8 +13,13 @@ from typing import List
 from pydantic import BaseModel
 import csv
 import io
+import os
 
 router = APIRouter()
+
+
+class CreditResponse(BaseModel):
+    balance: int
 
 class DecisionMakerResponse(BaseModel):
     id: int
@@ -57,6 +63,12 @@ async def process_job_task(job_id: int):
         
         mappings = job.column_mappings
         companies = job.companies_data
+
+        selected_platforms = job.selected_platforms or []
+        max_contacts_total = job.max_contacts_total or 0
+        max_contacts_per_company = job.max_contacts_per_company or 0
+        platforms_multiplier = max(1, len(selected_platforms))
+        found_total = 0
         
         company_col = mappings.get("company_name")
         location_col = mappings.get("location", "")
@@ -69,6 +81,9 @@ async def process_job_task(job_id: int):
             db.refresh(job)
             if job.status == JobStatus.CANCELLED:
                 break
+
+            if max_contacts_total and found_total >= max_contacts_total:
+                break
                 
             company_name = company.get(company_col)
             if not company_name:
@@ -80,10 +95,37 @@ async def process_job_task(job_id: int):
             company_type = company.get(company_type_col) if company_type_col else None
             
             # Scrape
-            results = await scraper.process_company(company_name, location, google_maps_url=google_maps_url, website=website)
+            remaining_total = (max_contacts_total - found_total) if max_contacts_total else None
+            remaining_per_company = max_contacts_per_company if max_contacts_per_company else None
+            results = await scraper.process_company(
+                company_name,
+                location,
+                google_maps_url=google_maps_url,
+                website=website,
+                platforms=selected_platforms,
+                max_people=remaining_per_company,
+                remaining_total=remaining_total,
+            )
             
             # Save Results
             for res in results:
+                if max_contacts_total and found_total >= max_contacts_total:
+                    break
+
+                credit_state = db.query(CreditState).filter(CreditState.id == 1).first()
+                if credit_state is None:
+                    credit_state = CreditState(id=1, balance=int(os.getenv("CREDITS_INITIAL_BALANCE", "0") or "0"))
+                    db.add(credit_state)
+                    db.commit()
+
+                if credit_state.balance < platforms_multiplier:
+                    job.stop_reason = "credits_exhausted"
+                    job.status = JobStatus.COMPLETED
+                    db.commit()
+                    break
+
+                credit_state.balance -= platforms_multiplier
+
                 dm = DecisionMaker(
                     job_id=job.id,
                     company_name=company_name,
@@ -98,6 +140,8 @@ async def process_job_task(job_id: int):
                 )
                 db.add(dm)
                 job.decision_makers_found += 1
+                job.credits_spent = (job.credits_spent or 0) + platforms_multiplier
+                found_total += 1
             
             job.processed_companies += 1
             db.commit()
@@ -118,13 +162,22 @@ async def process_job_task(job_id: int):
 
 @router.post("/jobs", response_model=JobResponse)
 async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    company_col = (job_in.mappings or {}).get("company_name")
+    if company_col and any(bad in company_col.lower() for bad in ["url", "website", "domain", "http", "www", "link"]):
+        raise HTTPException(status_code=400, detail="Company Name must be a name column, not a website/url column")
+
     # Create Job record
     db_job = Job(
         filename=job_in.filename,
         column_mappings=json.loads(json.dumps(job_in.mappings)),
         companies_data=json.loads(json.dumps(job_in.file_content)),
         total_companies=len(job_in.file_content),
-        status=JobStatus.QUEUED
+        status=JobStatus.QUEUED,
+        selected_platforms=json.loads(json.dumps(job_in.selected_platforms)),
+        max_contacts_total=job_in.max_contacts_total,
+        max_contacts_per_company=job_in.max_contacts_per_company,
+        credits_spent=0,
+        stop_reason=None,
     )
     
     db.add(db_job)
@@ -268,3 +321,9 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename=\"{filename}\""},
     )
+
+
+@router.get("/credits", response_model=CreditResponse)
+async def get_credits(db: Session = Depends(get_db)):
+    credit_state = db.query(CreditState).filter(CreditState.id == 1).first()
+    return CreditResponse(balance=int(credit_state.balance if credit_state else 0))

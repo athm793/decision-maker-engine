@@ -47,6 +47,7 @@ class OpenAICompatibleLLM:
         location: str | None = None,
         google_maps_url: str | None = None,
         website: str | None = None,
+        platforms: list[str] | None = None,
         max_people: int = 3,
     ) -> list[dict[str, Any]]:
         system = (
@@ -59,6 +60,7 @@ class OpenAICompatibleLLM:
             "location": location or "",
             "google_maps_url": google_maps_url or "",
             "website": website or "",
+            "platforms": platforms or [],
             "max_people": max_people,
             "output_schema": {
                 "people": [
@@ -111,4 +113,3 @@ def get_llm_client() -> OpenAICompatibleLLM:
         model=model,
         temperature=temperature,
     )
-
