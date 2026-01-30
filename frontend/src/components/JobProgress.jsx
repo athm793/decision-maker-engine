@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, CheckCircle, AlertTriangle, XCircle, Search } from 'lucide-react';
+import { Loader2, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 
 export function JobProgress({ job }) {
@@ -14,6 +14,17 @@ export function JobProgress({ job }) {
       case 'failed': return 'text-red-400';
       case 'cancelled': return 'text-yellow-400';
       default: return 'text-gray-400';
+    }
+  };
+
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'queued': return 'Queued';
+      case 'processing': return 'Processing';
+      case 'completed': return 'Completed';
+      case 'failed': return 'Failed';
+      case 'cancelled': return 'Cancelled';
+      default: return status;
     }
   };
 
@@ -43,6 +54,9 @@ export function JobProgress({ job }) {
             </p>
           </div>
           <div className="text-right">
+            <div className={clsx('text-xs font-medium uppercase tracking-wide', getStatusColor(job.status))}>
+              {getStatusLabel(job.status)}
+            </div>
             <div className="text-2xl font-bold text-white">
               {job.decision_makers_found}
             </div>
@@ -62,7 +76,13 @@ export function JobProgress({ job }) {
             <div 
               className={clsx(
                 "h-full transition-all duration-500 ease-out",
-                job.status === 'completed' ? "bg-green-500" : "bg-blue-500"
+                job.status === 'completed'
+                  ? "bg-green-500"
+                  : job.status === 'failed'
+                    ? "bg-red-500"
+                    : job.status === 'cancelled'
+                      ? "bg-yellow-500"
+                      : "bg-blue-500"
               )}
               style={{ width: `${percentage}%` }}
             />

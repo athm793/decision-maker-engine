@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.core.database import get_db, SessionLocal
 from app.models.job import Job, JobStatus
@@ -9,6 +10,8 @@ import json
 import asyncio
 from typing import List
 from pydantic import BaseModel
+import csv
+import io
 
 router = APIRouter()
 
@@ -25,6 +28,13 @@ class DecisionMakerResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class DecisionMakerListResponse(BaseModel):
+    items: List[DecisionMakerResponse]
+    total: int
+    limit: int
+    offset: int
+
 async def process_job_task(job_id: int):
     # Need to create a new DB session for the background task
     db = SessionLocal()
@@ -33,6 +43,9 @@ async def process_job_task(job_id: int):
     try:
         job = db.query(Job).filter(Job.id == job_id).first()
         if not job:
+            return
+
+        if job.status == JobStatus.CANCELLED:
             return
             
         job.status = JobStatus.PROCESSING
@@ -113,6 +126,21 @@ async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: S
     
     return db_job
 
+
+@router.get("/jobs", response_model=List[JobResponse])
+async def list_jobs(limit: int = 25, offset: int = 0, db: Session = Depends(get_db)):
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+
+    jobs = (
+        db.query(Job)
+        .order_by(Job.created_at.desc(), Job.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return jobs
+
 @router.get("/jobs/{job_id}", response_model=JobResponse)
 async def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -120,7 +148,105 @@ async def get_job(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}:
+        return job
+
+    job.status = JobStatus.CANCELLED
+    db.commit()
+    db.refresh(job)
+    return job
+
 @router.get("/jobs/{job_id}/results", response_model=List[DecisionMakerResponse])
 async def get_job_results(job_id: int, db: Session = Depends(get_db)):
     results = db.query(DecisionMaker).filter(DecisionMaker.job_id == job_id).all()
     return results
+
+
+@router.get("/jobs/{job_id}/results/paged", response_model=DecisionMakerListResponse)
+async def get_job_results_paged(
+    job_id: int,
+    q: str | None = None,
+    limit: int = 25,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    query = db.query(DecisionMaker).filter(DecisionMaker.job_id == job_id)
+
+    if q:
+        q_like = f"%{q}%"
+        query = query.filter(
+            or_(
+                DecisionMaker.company_name.ilike(q_like),
+                DecisionMaker.name.ilike(q_like),
+                DecisionMaker.title.ilike(q_like),
+                DecisionMaker.platform.ilike(q_like),
+                DecisionMaker.profile_url.ilike(q_like),
+                DecisionMaker.reasoning.ilike(q_like),
+            )
+        )
+
+    total = query.count()
+    items = query.order_by(DecisionMaker.id.desc()).offset(offset).limit(limit).all()
+    return DecisionMakerListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/jobs/{job_id}/results.csv")
+async def download_job_results_csv(job_id: int, q: str | None = None, db: Session = Depends(get_db)):
+    query = db.query(DecisionMaker).filter(DecisionMaker.job_id == job_id)
+
+    if q:
+        q_like = f"%{q}%"
+        query = query.filter(
+            or_(
+                DecisionMaker.company_name.ilike(q_like),
+                DecisionMaker.name.ilike(q_like),
+                DecisionMaker.title.ilike(q_like),
+                DecisionMaker.platform.ilike(q_like),
+                DecisionMaker.profile_url.ilike(q_like),
+                DecisionMaker.reasoning.ilike(q_like),
+            )
+        )
+
+    rows = query.order_by(DecisionMaker.id.desc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "company_name",
+            "name",
+            "title",
+            "platform",
+            "profile_url",
+            "confidence_score",
+            "reasoning",
+        ]
+    )
+    for dm in rows:
+        writer.writerow(
+            [
+                dm.company_name or "",
+                dm.name or "",
+                dm.title or "",
+                dm.platform or "",
+                dm.profile_url or "",
+                dm.confidence_score or "",
+                dm.reasoning or "",
+            ]
+        )
+
+    filename = f"job-{job_id}-results.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\""},
+    )

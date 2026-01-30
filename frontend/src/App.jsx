@@ -4,7 +4,8 @@ import { FileUpload } from './components/FileUpload';
 import { ColumnMapping } from './components/ColumnMapping';
 import { JobProgress } from './components/JobProgress';
 import { ResultsTable } from './components/ResultsTable';
-import { Loader2 } from 'lucide-react';
+import { JobHistory } from './components/JobHistory';
+import { Loader2, Square } from 'lucide-react';
 
 function App() {
   const [step, setStep] = useState('upload'); // upload, mapping, creating_job, processing
@@ -13,10 +14,21 @@ function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState(null);
   const [jobId, setJobId] = useState(null);
+  const [isCancelling, setIsCancelling] = useState(false);
   
   // Job State
   const [job, setJob] = useState(null);
   const [results, setResults] = useState([]);
+  const [resultsTotal, setResultsTotal] = useState(0);
+  const [resultsQueryInput, setResultsQueryInput] = useState('');
+  const [resultsQuery, setResultsQuery] = useState('');
+  const [resultsOffset, setResultsOffset] = useState(0);
+  const [resultsLimit, setResultsLimit] = useState(25);
+  const [isResultsLoading, setIsResultsLoading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const [jobHistory, setJobHistory] = useState([]);
+  const [isJobHistoryLoading, setIsJobHistoryLoading] = useState(false);
 
   // Polling Effect
   useEffect(() => {
@@ -24,17 +36,12 @@ function App() {
     if (step === 'processing' && jobId) {
       const fetchJobStatus = async () => {
         try {
-          const [jobRes, resultsRes] = await Promise.all([
-            axios.get(`/api/jobs/${jobId}`),
-            axios.get(`/api/jobs/${jobId}/results`)
-          ]);
-          
+          const jobRes = await axios.get(`/api/jobs/${jobId}`);
+
           setJob(jobRes.data);
-          setResults(resultsRes.data);
 
           if (['completed', 'failed', 'cancelled'].includes(jobRes.data.status)) {
-            // Stop polling eventually, or keep it to show final state
-            // For now, we just keep polling to keep it simple, or reduce frequency
+            if (interval) clearInterval(interval);
           }
         } catch (err) {
           console.error("Error polling job:", err);
@@ -46,6 +53,80 @@ function App() {
     }
     return () => clearInterval(interval);
   }, [step, jobId]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setResultsQuery(resultsQueryInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [resultsQueryInput]);
+
+  useEffect(() => {
+    let interval;
+
+    const fetchResults = async () => {
+      if (!jobId) return;
+      setIsResultsLoading(true);
+      try {
+        const response = await axios.get(`/api/jobs/${jobId}/results/paged`, {
+          params: {
+            q: resultsQuery || undefined,
+            limit: resultsLimit,
+            offset: resultsOffset,
+          },
+        });
+
+        setResults(response.data.items);
+        setResultsTotal(response.data.total);
+      } catch (err) {
+        console.error('Error fetching results:', err);
+      } finally {
+        setIsResultsLoading(false);
+      }
+    };
+
+    if (step === 'processing' && jobId) {
+      fetchResults();
+      if (job && ['queued', 'processing'].includes(job.status)) {
+        interval = setInterval(fetchResults, 2000);
+      }
+    }
+
+    return () => clearInterval(interval);
+  }, [step, jobId, job?.status, resultsQuery, resultsOffset, resultsLimit]);
+
+  const fetchJobHistory = async () => {
+    setIsJobHistoryLoading(true);
+    try {
+      const response = await axios.get('/api/jobs', { params: { limit: 25, offset: 0 } });
+      setJobHistory(response.data);
+    } catch (err) {
+      console.error('Error fetching job history:', err);
+    } finally {
+      setIsJobHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (step === 'upload') {
+      fetchJobHistory();
+    }
+  }, [step]);
+
+  const handleStopJob = async () => {
+    if (!jobId || isCancelling) return;
+    setIsCancelling(true);
+    setError(null);
+
+    try {
+      const response = await axios.post(`/api/jobs/${jobId}/cancel`);
+      setJob(response.data);
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      setError((status ? `Failed to stop job (${status}). ` : 'Failed to stop job. ') + (detail || err?.message || ''));
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   const handleFileSelect = async (selectedFile) => {
     setFile(selectedFile);
@@ -102,6 +183,10 @@ function App() {
             });
             
             setJobId(response.data.id);
+            setResultsQueryInput('');
+            setResultsQuery('');
+            setResultsOffset(0);
+            setResultsLimit(25);
             setStep('processing');
         } catch (err) {
             console.error(err);
@@ -131,8 +216,55 @@ function App() {
     setJobId(null);
     setJob(null);
     setResults([]);
+    setResultsTotal(0);
+    setResultsQueryInput('');
+    setResultsQuery('');
+    setResultsOffset(0);
+    setResultsLimit(25);
     setStep('upload');
   }
+
+  const handleSelectJobFromHistory = (id) => {
+    setError(null);
+    setJobId(id);
+    setJob(null);
+    setResults([]);
+    setResultsTotal(0);
+    setResultsQueryInput('');
+    setResultsQuery('');
+    setResultsOffset(0);
+    setResultsLimit(25);
+    setStep('processing');
+  };
+
+  const handleDownloadCsv = async () => {
+    if (!jobId || isDownloading) return;
+    setIsDownloading(true);
+    setError(null);
+
+    try {
+      const response = await axios.get(`/api/jobs/${jobId}/results.csv`, {
+        params: { q: resultsQuery || undefined },
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `job-${jobId}-results.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      setError((status ? `Failed to download CSV (${status}). ` : 'Failed to download CSV. ') + (detail || err?.message || ''));
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
@@ -171,6 +303,13 @@ function App() {
               isUploading={isUploading}
               error={error}
             />
+
+            <JobHistory
+              jobs={jobHistory}
+              isLoading={isJobHistoryLoading}
+              onRefresh={fetchJobHistory}
+              onSelectJob={handleSelectJobFromHistory}
+            />
           </div>
         )}
 
@@ -193,16 +332,68 @@ function App() {
             <div className="space-y-8 animate-in fade-in duration-500">
                 <div className="flex justify-between items-center">
                     <h1 className="text-2xl font-bold">Job Dashboard</h1>
-                    <button 
-                        onClick={handleNewJob}
-                        className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
-                    >
-                        New Job
-                    </button>
+                    <div className="flex items-center gap-3">
+                        {['queued', 'processing'].includes(job.status) && (
+                          <button
+                              onClick={handleStopJob}
+                              disabled={isCancelling}
+                              className="px-4 py-2 bg-red-600/20 text-red-300 hover:bg-red-600/30 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          >
+                              <Square className="w-4 h-4" />
+                              {isCancelling ? 'Stopping…' : 'Stop Job'}
+                          </button>
+                        )}
+                        <button 
+                            onClick={handleNewJob}
+                            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
+                        >
+                            New Job
+                        </button>
+                    </div>
                 </div>
 
+                {error && (
+                  <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300 text-sm">
+                    {error}
+                  </div>
+                )}
+
+                {job.status === 'completed' && (
+                  <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-200 text-sm">
+                    Job completed. Results below are final.
+                  </div>
+                )}
+                {job.status === 'cancelled' && (
+                  <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-200 text-sm">
+                    Job cancelled. Results below include anything found before stopping.
+                  </div>
+                )}
+                {job.status === 'failed' && (
+                  <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-200 text-sm">
+                    Job failed. Check logs for details.
+                  </div>
+                )}
+
                 <JobProgress job={job} />
-                <ResultsTable results={results} />
+                <ResultsTable
+                  results={results}
+                  total={resultsTotal}
+                  query={resultsQueryInput}
+                  onQueryChange={(value) => {
+                    setResultsQueryInput(value);
+                    setResultsOffset(0);
+                  }}
+                  offset={resultsOffset}
+                  limit={resultsLimit}
+                  onOffsetChange={setResultsOffset}
+                  onLimitChange={(n) => {
+                    setResultsLimit(n);
+                    setResultsOffset(0);
+                  }}
+                  onDownload={handleDownloadCsv}
+                  isDownloading={isDownloading}
+                  isLoading={isResultsLoading}
+                />
             </div>
         )}
       </main>
