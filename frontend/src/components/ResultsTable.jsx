@@ -115,6 +115,7 @@ export function ResultsTable({
               <tr>
                 <th className="px-6 py-3 border-b border-gray-700">Company Name</th>
                 <th className="px-6 py-3 border-b border-gray-700">Company Type</th>
+                <th className="px-6 py-3 border-b border-gray-700">Company Address</th>
                 <th className="px-6 py-3 border-b border-gray-700">Company Website</th>
                 <th className="px-6 py-3 border-b border-gray-700">Name</th>
                 <th className="px-6 py-3 border-b border-gray-700">Title</th>
@@ -131,6 +132,9 @@ export function ResultsTable({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-400">
                     {dm.company_type || ''}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-400">
+                    {dm.company_address || ''}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {dm.company_website ? (

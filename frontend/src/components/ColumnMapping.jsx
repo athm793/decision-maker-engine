@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react';
 const REQUIRED_FIELDS = [
   { key: 'company_name', label: 'Company Name', required: true },
   { key: 'industry', label: 'Company Type', required: false },
+  { key: 'address', label: 'Company Address', required: false },
   { key: 'location', label: 'Location', required: false },
   { key: 'website', label: 'Company Website', required: false },
 ];

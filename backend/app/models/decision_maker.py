@@ -9,6 +9,7 @@ class DecisionMaker(Base):
     job_id = Column(Integer, ForeignKey("jobs.id"))
     company_name = Column(String, index=True)
     company_type = Column(String)
+    company_address = Column(String)
     company_website = Column(String)
     name = Column(String)
     title = Column(String)

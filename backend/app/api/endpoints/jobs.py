@@ -33,6 +33,22 @@ def _is_url_like(raw: object) -> bool:
         return True
     return False
 
+def _looks_like_address(raw: object) -> bool:
+    v = str(raw or "").strip()
+    if len(v) < 6:
+        return False
+    if re.search(r"\b(po box|p\.?o\.?\s*box)\b", v, flags=re.IGNORECASE):
+        return True
+    if re.search(r"\b\d{5}(-\d{4})?\b", v) and "," in v:
+        return True
+    if re.search(r"\b\d{1,6}\s+\S+", v) and re.search(
+        r"\b(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|hwy|highway|suite|ste|apt|unit|pl|place|ct|court|cir|circle)\b",
+        v,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    return False
+
 
 class CreditResponse(BaseModel):
     balance: int
@@ -41,6 +57,7 @@ class DecisionMakerResponse(BaseModel):
     id: int
     company_name: str
     company_type: str | None = None
+    company_address: str | None = None
     company_website: str | None = None
     name: str | None
     title: str | None
@@ -99,6 +116,7 @@ async def _process_job_task(job_id: int):
         gmaps_col = mappings.get("google_maps_url", "")
         website_col = mappings.get("website", "")
         company_type_col = mappings.get("industry", "")
+        address_col = mappings.get("address", "")
         
         logger.info(
             "process_job_task.options job_id=%s selected_platforms=%s max_total=%s max_per_company=%s credits_per_contact=%s",
@@ -125,10 +143,13 @@ async def _process_job_task(job_id: int):
             google_maps_url = company.get(gmaps_col) if gmaps_col else None
             website = company.get(website_col) if website_col else None
             company_type = company.get(company_type_col) if company_type_col else None
+            company_address = company.get(address_col) if address_col else None
 
             if not website and _is_url_like(company_name):
                 website = company_name
                 company_name = ""
+            if not company_address and _looks_like_address(location):
+                company_address = location
 
             logger.info(
                 "process_job_task.company_start job_id=%s idx=%s raw_company_name=%s location=%s",
@@ -147,14 +168,20 @@ async def _process_job_task(job_id: int):
             company_name = (enriched.get("company_name") or company_name or "").strip()
             company_type = (company_type or enriched.get("company_type") or "").strip() or None
             website = (website or enriched.get("company_website") or "").strip() or None
+            company_address = (company_address or enriched.get("company_address") or "").strip() or None
+            if company_type and _looks_like_address(company_type):
+                if not company_address:
+                    company_address = company_type
+                company_type = None
 
             logger.info(
-                "process_job_task.company_enriched job_id=%s idx=%s company_name=%s website=%s company_type=%s",
+                "process_job_task.company_enriched job_id=%s idx=%s company_name=%s website=%s company_type=%s address=%s",
                 job_id,
                 idx,
                 (company_name[:200] if company_name else ""),
                 ((website or "")[:200]),
                 ((company_type or "")[:200]),
+                ((company_address or "")[:200]),
             )
             
             # Scrape
@@ -208,6 +235,7 @@ async def _process_job_task(job_id: int):
                     job_id=job.id,
                     company_name=company_name,
                     company_type=company_type,
+                    company_address=company_address,
                     company_website=website,
                     name=res.get("name"),
                     title=res.get("title"),
@@ -386,6 +414,7 @@ async def get_job_results_paged(
             or_(
                 DecisionMaker.company_name.ilike(q_like),
                 DecisionMaker.company_type.ilike(q_like),
+                DecisionMaker.company_address.ilike(q_like),
                 DecisionMaker.company_website.ilike(q_like),
                 DecisionMaker.name.ilike(q_like),
                 DecisionMaker.title.ilike(q_like),
@@ -410,6 +439,7 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
             or_(
                 DecisionMaker.company_name.ilike(q_like),
                 DecisionMaker.company_type.ilike(q_like),
+                DecisionMaker.company_address.ilike(q_like),
                 DecisionMaker.company_website.ilike(q_like),
                 DecisionMaker.name.ilike(q_like),
                 DecisionMaker.title.ilike(q_like),
@@ -427,6 +457,7 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
         [
             "Company Name",
             "Company Type",
+            "Company Address",
             "Company Website",
             "Name",
             "Title",
@@ -441,6 +472,7 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
             [
                 dm.company_name or "",
                 getattr(dm, "company_type", "") or "",
+                getattr(dm, "company_address", "") or "",
                 getattr(dm, "company_website", "") or "",
                 dm.name or "",
                 dm.title or "",

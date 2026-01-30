@@ -24,7 +24,7 @@ def _coerce_company(payload: Any) -> dict[str, Any] | None:
     if isinstance(payload, dict) and isinstance(payload.get("company"), dict):
         company = payload["company"]
         out: dict[str, Any] = {}
-        for k in ["company_name", "company_type", "company_website"]:
+        for k in ["company_name", "company_type", "company_address", "company_website"]:
             v = company.get(k)
             if isinstance(v, str):
                 out[k] = v.strip()
@@ -131,11 +131,14 @@ class OpenAICompatibleLLM:
                 "company": {
                     "company_name": "",
                     "company_type": "",
+                    "company_address": "",
                     "company_website": "",
                 }
             },
             "constraints": [
                 "company_name must be the business name only (no URL).",
+                "company_type must be a short category/industry only (not an address).",
+                "company_address must be a physical address only (not a category/industry).",
                 "company_website must be a website URL or domain only (no extra text).",
                 "If uncertain, leave fields as empty strings.",
             ],
@@ -155,12 +158,13 @@ class OpenAICompatibleLLM:
             if start != -1 and end != -1 and end > start:
                 payload = json.loads(text[start : end + 1])
             else:
-                return {"company_name": "", "company_type": "", "company_website": ""}
+                return {"company_name": "", "company_type": "", "company_address": "", "company_website": ""}
 
         company = _coerce_company(payload) or {}
         return {
             "company_name": company.get("company_name", "") or "",
             "company_type": company.get("company_type", "") or "",
+            "company_address": company.get("company_address", "") or "",
             "company_website": company.get("company_website", "") or "",
         }
 

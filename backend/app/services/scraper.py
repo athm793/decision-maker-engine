@@ -91,12 +91,14 @@ class ScraperService:
             name = (enriched.get("company_name") or "").strip()
             site = (enriched.get("company_website") or "").strip()
             ctype = (enriched.get("company_type") or "").strip()
+            addr = (enriched.get("company_address") or "").strip()
             if re.search(r"https?://|www\.", name, flags=re.IGNORECASE):
                 name = ""
             return {
                 "company_name": name,
                 "company_website": site,
                 "company_type": ctype,
+                "company_address": addr,
             }
 
         guessed = self._guess_company_name_from_website(website)
@@ -104,6 +106,7 @@ class ScraperService:
             "company_name": guessed,
             "company_website": (website or "").strip(),
             "company_type": "",
+            "company_address": "",
         }
 
     async def search_linkedin(self, company_name: str, location: str = "") -> List[Dict[str, Any]]:

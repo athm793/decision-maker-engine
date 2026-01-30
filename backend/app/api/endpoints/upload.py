@@ -10,7 +10,8 @@ COLUMN_KEYWORDS = {
     "company_name": ["company", "name", "business", "organization"],
     "google_maps_url": ["maps", "url", "link", "google"],
     "industry": ["industry", "category", "sector"],
-    "location": ["location", "city", "address", "state", "country"],
+    "address": ["address", "street", "suite", "zip", "postal"],
+    "location": ["location", "city", "state", "country"],
     "website": ["website", "site", "web"]
 }
 

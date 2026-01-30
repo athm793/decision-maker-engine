@@ -119,6 +119,8 @@ function App() {
   }, [step]);
 
   useEffect(() => {
+    let interval;
+
     const fetchCredits = async () => {
       try {
         const response = await axios.get('/api/credits');
@@ -128,10 +130,11 @@ function App() {
       }
     };
 
-    if (step === 'mapping') {
-      fetchCredits();
-    }
-  }, [step]);
+    fetchCredits();
+    const fast = step === 'processing' && jobStatus && ['queued', 'processing'].includes(jobStatus);
+    interval = setInterval(fetchCredits, fast ? 2000 : 10000);
+    return () => clearInterval(interval);
+  }, [step, jobStatus]);
 
   const handleStopJob = async () => {
     if (!jobId || isCancelling) return;
@@ -329,11 +332,16 @@ function App() {
               Decision Maker Discovery
             </span>
           </div>
-          <nav className="flex gap-4 text-sm font-medium text-gray-400">
-            <a href="#" className="hover:text-white transition-colors">Dashboard</a>
-            <a href="#" className="hover:text-white transition-colors">Jobs</a>
-            <a href="#" className="hover:text-white transition-colors">Settings</a>
-          </nav>
+          <div className="flex items-center gap-4">
+            <div className="text-xs text-gray-300 bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-1.5">
+              Credits: {typeof creditsBalance === 'number' ? creditsBalance : '—'}
+            </div>
+            <nav className="flex gap-4 text-sm font-medium text-gray-400">
+              <a href="#" className="hover:text-white transition-colors">Dashboard</a>
+              <a href="#" className="hover:text-white transition-colors">Jobs</a>
+              <a href="#" className="hover:text-white transition-colors">Settings</a>
+            </nav>
+          </div>
         </div>
       </header>
 
