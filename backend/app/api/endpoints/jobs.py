@@ -738,7 +738,7 @@ async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: S
         job_in.max_contacts_per_company,
     )
 
-    required_keys = ["company_name", "google_maps_url", "industry", "city", "country", "location", "website"]
+    required_keys = ["company_name", "industry", "location", "website"]
     missing_mappings = [k for k in required_keys if not _text((job_in.mappings or {}).get(k, ""))]
     if missing_mappings:
         raise HTTPException(status_code=400, detail=f"Missing required mappings: {', '.join(missing_mappings)}")
