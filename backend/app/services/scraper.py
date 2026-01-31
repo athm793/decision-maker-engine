@@ -7,9 +7,65 @@ from urllib.parse import urlparse
 import logging
 
 from app.services.llm.client import LLMDisabledError, get_llm_client
-from app.services.web_search import WebSearchService, guess_person_name_from_title
+from app.services.decision_maker_rules import decision_maker_query_keywords, is_decision_maker_title
+from app.services.web_search import WebSearchService, guess_person_name_from_text, guess_person_name_from_title, guess_person_title_from_title
 
 logger = logging.getLogger(__name__)
+
+def _text(raw: object) -> str:
+    return str(raw or "").strip()
+
+def _website_host(website: str | None) -> str:
+    raw = _text(website)
+    if not raw:
+        return ""
+    if not re.match(r"^https?://", raw, flags=re.IGNORECASE):
+        raw = "https://" + raw
+    try:
+        host = urlparse(raw).netloc
+    except Exception:
+        return ""
+    host = host.lower().strip()
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+def _build_deep_search_queries(
+    company_name: str,
+    location: str,
+    selected_platforms: list[str],
+    website: str | None,
+) -> list[str]:
+    titles = decision_maker_query_keywords()
+    base = f"\"{company_name}\" {location} ({' OR '.join(titles)})"
+    out: list[str] = []
+    for p in selected_platforms:
+        if p == "linkedin":
+            out.append(base + " site:linkedin.com/in")
+        elif p == "google_maps":
+            out.append(base + " site:google.com/maps")
+        elif p == "facebook":
+            out.append(base + " site:facebook.com")
+        elif p == "instagram":
+            out.append(base + " site:instagram.com")
+        elif p == "yelp":
+            out.append(base + " site:yelp.com")
+
+    host = _website_host(website)
+    if host:
+        out.append(f"site:{host} (leadership OR management OR executives OR team) ({' OR '.join(titles)})")
+
+    out.append(f"\"{company_name}\" {location} (leadership OR management OR executives OR team) ({' OR '.join(titles)})")
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for q in out:
+        qs = " ".join(str(q).split()).strip()
+        if not qs or qs in seen:
+            continue
+        seen.add(qs)
+        deduped.append(qs)
+    return deduped
 
 def _infer_city_country_from_search_results(items: list[dict[str, Any]]) -> tuple[str, str]:
     city = ""
@@ -245,8 +301,8 @@ class ScraperService:
             if not self.web_search:
                 return []
 
-            titles = ["CEO", "Founder", "Owner", "President", "\"General Manager\"", "\"Managing Director\"", "\"Operations Manager\""]
-            q = f"{company_name} {location} ({' OR '.join(titles)}) site:linkedin.com/in"
+            titles = decision_maker_query_keywords()
+            q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:linkedin.com/in"
             items = await self._cached_search(q, limit=search_limit or 5)
             for item in items:
                 url = item.get("url")
@@ -255,10 +311,11 @@ class ScraperService:
                 title = item.get("title", "")
                 snippet = item.get("snippet", "")
                 name = guess_person_name_from_title(title) or ""
+                role = guess_person_title_from_title(title) or ""
                 results.append(
                     {
                         "name": name,
-                        "title": "",
+                        "title": role,
                         "platform": "LinkedIn",
                         "profile_url": url,
                         "confidence": "MEDIUM",
@@ -281,18 +338,7 @@ class ScraperService:
         if platform == "linkedin":
             out = await self.search_linkedin(company_name, location, search_limit=search_limit or 5)
             if deep_search and self.web_search:
-                titles = [
-                    "\"Managing Partner\"",
-                    "\"Managing Member\"",
-                    "Partner",
-                    "Principal",
-                    "COO",
-                    "Director",
-                    "\"Operations Manager\"",
-                    "\"Vice President\"",
-                    "VP",
-                    "\"Head of\"",
-                ]
+                titles = decision_maker_query_keywords()
                 q2 = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:linkedin.com/in"
                 items2 = await self._cached_search(q2, limit=max(1, min(search_limit, 10)))
                 for item in items2:
@@ -302,10 +348,11 @@ class ScraperService:
                     title = item.get("title", "")
                     snippet = item.get("snippet", "")
                     name = guess_person_name_from_title(title) or ""
+                    role = guess_person_title_from_title(title) or ""
                     out.append(
                         {
                             "name": name,
-                            "title": "",
+                            "title": role,
                             "platform": "LinkedIn",
                             "profile_url": url,
                             "confidence": "LOW",
@@ -327,58 +374,92 @@ class ScraperService:
             return []
 
         if platform == "google_maps":
-            q = f"{company_name} {location} site:google.com/maps"
+            titles = decision_maker_query_keywords()
+            q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:google.com/maps"
             items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
             for item in items:
                 url = item.get("url")
                 if not url:
                     continue
+                raw_title = _text(item.get("title"))
+                snippet = _text(item.get("snippet"))
+                name = guess_person_name_from_title(raw_title) or guess_person_name_from_text(raw_title) or guess_person_name_from_text(snippet) or ""
+                role = guess_person_title_from_title(raw_title) or guess_person_title_from_title(snippet) or ""
+                if not role:
+                    ok, kw = is_decision_maker_title(raw_title) if raw_title else (False, "")
+                    if not ok:
+                        ok, kw = is_decision_maker_title(snippet) if snippet else (False, "")
+                    if ok:
+                        role = kw
                 out.append(
                     {
-                        "name": "",
-                        "title": "",
+                        "name": name,
+                        "title": role,
                         "platform": "Google Maps",
                         "profile_url": url,
-                        "confidence": "LOW",
-                        "reasoning": item.get("snippet") or item.get("title"),
+                        "confidence": ("MEDIUM" if (name and role) else "LOW"),
+                        "reasoning": snippet or raw_title,
                     }
                 )
             if deep_search:
-                q2 = f"\"{company_name}\" {location} \"Google Maps\" owner"
+                q2 = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:google.com/maps"
                 items2 = await self._cached_search(q2, limit=search_limit)
                 for item in items2:
                     url = item.get("url")
                     if not url:
                         continue
+                    raw_title = _text(item.get("title"))
+                    snippet = _text(item.get("snippet"))
+                    name = guess_person_name_from_title(raw_title) or guess_person_name_from_text(raw_title) or guess_person_name_from_text(snippet) or ""
+                    role = guess_person_title_from_title(raw_title) or guess_person_title_from_title(snippet) or ""
+                    if not role:
+                        ok, kw = is_decision_maker_title(raw_title) if raw_title else (False, "")
+                        if not ok:
+                            ok, kw = is_decision_maker_title(snippet) if snippet else (False, "")
+                        if ok:
+                            role = kw
                     out.append(
                         {
-                            "name": "",
-                            "title": "",
+                            "name": name,
+                            "title": role,
                             "platform": "Google Maps",
                             "profile_url": url,
-                            "confidence": "LOW",
-                            "reasoning": item.get("snippet") or item.get("title"),
+                            "confidence": ("MEDIUM" if (name and role) else "LOW"),
+                            "reasoning": snippet or raw_title,
                         }
                     )
             return out
 
         if platform == "facebook":
-            q = f"{company_name} {location} site:facebook.com (owner OR founder OR ceo)"
+            titles = decision_maker_query_keywords()
+            q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:facebook.com"
             items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
             for item in items:
                 url = item.get("url")
                 if not url:
                     continue
+                if re.search(r"facebook\.com/(pages|places)/", url, flags=re.IGNORECASE):
+                    continue
+                raw_title = _text(item.get("title"))
+                snippet = _text(item.get("snippet"))
+                name = guess_person_name_from_title(raw_title) or guess_person_name_from_text(raw_title) or guess_person_name_from_text(snippet) or ""
+                role = guess_person_title_from_title(raw_title) or guess_person_title_from_title(snippet) or ""
+                if not role:
+                    ok, kw = is_decision_maker_title(raw_title) if raw_title else (False, "")
+                    if not ok:
+                        ok, kw = is_decision_maker_title(snippet) if snippet else (False, "")
+                    if ok:
+                        role = kw
                 out.append(
                     {
-                        "name": "",
-                        "title": "",
+                        "name": name,
+                        "title": role,
                         "platform": "Facebook",
                         "profile_url": url,
-                        "confidence": "LOW",
-                        "reasoning": item.get("snippet") or item.get("title"),
+                        "confidence": ("MEDIUM" if (name and role) else "LOW"),
+                        "reasoning": snippet or raw_title,
                     }
                 )
             if deep_search:
@@ -388,34 +469,59 @@ class ScraperService:
                     url = item.get("url")
                     if not url:
                         continue
+                    if re.search(r"facebook\.com/(pages|places)/", url, flags=re.IGNORECASE):
+                        continue
+                    raw_title = _text(item.get("title"))
+                    snippet = _text(item.get("snippet"))
+                    name = guess_person_name_from_title(raw_title) or guess_person_name_from_text(raw_title) or guess_person_name_from_text(snippet) or ""
+                    role = guess_person_title_from_title(raw_title) or guess_person_title_from_title(snippet) or ""
+                    if not role:
+                        ok, kw = is_decision_maker_title(raw_title) if raw_title else (False, "")
+                        if not ok:
+                            ok, kw = is_decision_maker_title(snippet) if snippet else (False, "")
+                        if ok:
+                            role = kw
                     out.append(
                         {
-                            "name": "",
-                            "title": "",
+                            "name": name,
+                            "title": role,
                             "platform": "Facebook",
                             "profile_url": url,
-                            "confidence": "LOW",
-                            "reasoning": item.get("snippet") or item.get("title"),
+                            "confidence": ("MEDIUM" if (name and role) else "LOW"),
+                            "reasoning": snippet or raw_title,
                         }
                     )
             return out
 
         if platform == "instagram":
-            q = f"{company_name} {location} (founder OR ceo OR owner) site:instagram.com"
+            titles = decision_maker_query_keywords()
+            q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:instagram.com"
             items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
             for item in items:
                 url = item.get("url")
                 if not url:
                     continue
+                if re.search(r"instagram\.com/(p|reel|explore)/", url, flags=re.IGNORECASE):
+                    continue
+                raw_title = _text(item.get("title"))
+                snippet = _text(item.get("snippet"))
+                name = guess_person_name_from_title(raw_title) or guess_person_name_from_text(raw_title) or guess_person_name_from_text(snippet) or ""
+                role = guess_person_title_from_title(raw_title) or guess_person_title_from_title(snippet) or ""
+                if not role:
+                    ok, kw = is_decision_maker_title(raw_title) if raw_title else (False, "")
+                    if not ok:
+                        ok, kw = is_decision_maker_title(snippet) if snippet else (False, "")
+                    if ok:
+                        role = kw
                 out.append(
                     {
-                        "name": "",
-                        "title": "",
+                        "name": name,
+                        "title": role,
                         "platform": "Instagram",
                         "profile_url": url,
-                        "confidence": "LOW",
-                        "reasoning": item.get("snippet") or item.get("title"),
+                        "confidence": ("MEDIUM" if (name and role) else "LOW"),
+                        "reasoning": snippet or raw_title,
                     }
                 )
             if deep_search:
@@ -425,51 +531,84 @@ class ScraperService:
                     url = item.get("url")
                     if not url:
                         continue
+                    if re.search(r"instagram\.com/(p|reel|explore)/", url, flags=re.IGNORECASE):
+                        continue
+                    raw_title = _text(item.get("title"))
+                    snippet = _text(item.get("snippet"))
+                    name = guess_person_name_from_title(raw_title) or guess_person_name_from_text(raw_title) or guess_person_name_from_text(snippet) or ""
+                    role = guess_person_title_from_title(raw_title) or guess_person_title_from_title(snippet) or ""
+                    if not role:
+                        ok, kw = is_decision_maker_title(raw_title) if raw_title else (False, "")
+                        if not ok:
+                            ok, kw = is_decision_maker_title(snippet) if snippet else (False, "")
+                        if ok:
+                            role = kw
                     out.append(
                         {
-                            "name": "",
-                            "title": "",
+                            "name": name,
+                            "title": role,
                             "platform": "Instagram",
                             "profile_url": url,
-                            "confidence": "LOW",
-                            "reasoning": item.get("snippet") or item.get("title"),
+                            "confidence": ("MEDIUM" if (name and role) else "LOW"),
+                            "reasoning": snippet or raw_title,
                         }
                     )
             return out
 
         if platform == "yelp":
-            q = f"{company_name} {location} site:yelp.com"
+            titles = decision_maker_query_keywords()
+            q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:yelp.com"
             items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
             for item in items:
                 url = item.get("url")
                 if not url:
                     continue
+                raw_title = _text(item.get("title"))
+                snippet = _text(item.get("snippet"))
+                name = guess_person_name_from_title(raw_title) or guess_person_name_from_text(raw_title) or guess_person_name_from_text(snippet) or ""
+                role = guess_person_title_from_title(raw_title) or guess_person_title_from_title(snippet) or ""
+                if not role:
+                    ok, kw = is_decision_maker_title(raw_title) if raw_title else (False, "")
+                    if not ok:
+                        ok, kw = is_decision_maker_title(snippet) if snippet else (False, "")
+                    if ok:
+                        role = kw
                 out.append(
                     {
-                        "name": "",
-                        "title": "",
+                        "name": name,
+                        "title": role,
                         "platform": "Yelp",
                         "profile_url": url,
-                        "confidence": "LOW",
-                        "reasoning": item.get("snippet") or item.get("title"),
+                        "confidence": ("MEDIUM" if (name and role) else "LOW"),
+                        "reasoning": snippet or raw_title,
                     }
                 )
             if deep_search:
-                q2 = f"\"{company_name}\" {location} site:yelp.com \"Business owner\""
+                q2 = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:yelp.com"
                 items2 = await self._cached_search(q2, limit=search_limit)
                 for item in items2:
                     url = item.get("url")
                     if not url:
                         continue
+                    raw_title = _text(item.get("title"))
+                    snippet = _text(item.get("snippet"))
+                    name = guess_person_name_from_title(raw_title) or guess_person_name_from_text(raw_title) or guess_person_name_from_text(snippet) or ""
+                    role = guess_person_title_from_title(raw_title) or guess_person_title_from_title(snippet) or ""
+                    if not role:
+                        ok, kw = is_decision_maker_title(raw_title) if raw_title else (False, "")
+                        if not ok:
+                            ok, kw = is_decision_maker_title(snippet) if snippet else (False, "")
+                        if ok:
+                            role = kw
                     out.append(
                         {
-                            "name": "",
-                            "title": "",
+                            "name": name,
+                            "title": role,
                             "platform": "Yelp",
                             "profile_url": url,
-                            "confidence": "LOW",
-                            "reasoning": item.get("snippet") or item.get("title"),
+                            "confidence": ("MEDIUM" if (name and role) else "LOW"),
+                            "reasoning": snippet or raw_title,
                         }
                     )
             return out
@@ -527,19 +666,38 @@ class ScraperService:
         if max_people <= 0:
             return []
 
-        if selected and self.web_search:
+        def _coerce_title(candidate: dict[str, Any]) -> str:
+            t = str(candidate.get("title") or "").strip()
+            if t:
+                return t
+            reasoning = str(candidate.get("reasoning") or "").strip()
+            guessed = guess_person_title_from_title(reasoning) or ""
+            return guessed.strip()
+
+        def _is_valid_decision_maker(candidate: dict[str, Any]) -> bool:
+            title = _coerce_title(candidate)
+            ok, _ = is_decision_maker_title(title)
+            if ok and title:
+                candidate["title"] = title
+            return ok
+
+        ordered_platforms = [p for p in selected if p != "linkedin"]
+        if "linkedin" in selected:
+            ordered_platforms = ["linkedin"] + ordered_platforms
+
+        waterfall_out: list[dict[str, Any]] = []
+        if ordered_platforms and self.web_search:
             logger.info(
                 "scraper.process_company.waterfall company_name=%s platforms=%s max_people=%s",
                 (company_name[:200] if company_name else ""),
-                selected,
+                ordered_platforms,
                 max_people,
             )
-            out: list[dict[str, Any]] = []
             seen: set[str] = set()
             deep_platform = None
             if deep_search:
-                deep_platform = "linkedin" if "linkedin" in selected else (selected[0] if selected else None)
-            for platform in selected:
+                deep_platform = "linkedin" if "linkedin" in ordered_platforms else (ordered_platforms[0] if ordered_platforms else None)
+            for platform in ordered_platforms:
                 items = await self.search_platform(
                     platform,
                     company_name,
@@ -553,18 +711,100 @@ class ScraperService:
                         continue
                     if url:
                         seen.add(url)
-                    out.append(item)
-                    if len(out) >= max_people:
-                        return out
-            if out:
-                return out
+                    if not _is_valid_decision_maker(item):
+                        continue
+                    waterfall_out.append(item)
+                    if len(waterfall_out) >= max_people:
+                        return waterfall_out[:max_people]
+
+        deep_results: list[dict[str, Any]] = []
+        if deep_search and self.web_search and len(waterfall_out) < max_people:
+            seen: set[str] = set()
+            for x in waterfall_out:
+                u = (x.get("profile_url") or "").strip()
+                if u:
+                    seen.add(u)
+            allowed: set[str] = set(ordered_platforms)
+            deep_limit = max(10, int(search_limit or 3) * 3)
+            queries = _build_deep_search_queries(company_name, location, ordered_platforms, website)
+            items: list[dict[str, Any]] = []
+            for q in queries:
+                items.extend(await self._cached_search(q, limit=deep_limit))
+            deep_results = items
+
+            for it in items:
+                u = _text(it.get("url"))
+                if not u:
+                    continue
+                platform_key = ""
+                if "linkedin.com/in" in u:
+                    platform_key = "linkedin"
+                elif "google.com/maps" in u:
+                    platform_key = "google_maps"
+                elif "facebook.com" in u:
+                    platform_key = "facebook"
+                elif "instagram.com" in u:
+                    platform_key = "instagram"
+                elif "yelp.com" in u:
+                    platform_key = "yelp"
+                if not platform_key or platform_key not in allowed:
+                    continue
+
+                raw_title = _text(it.get("title"))
+                snippet = _text(it.get("snippet"))
+                name = guess_person_name_from_title(raw_title) or guess_person_name_from_text(raw_title) or guess_person_name_from_text(snippet) or ""
+                role = guess_person_title_from_title(raw_title) or guess_person_title_from_title(snippet) or ""
+                if not role:
+                    ok, kw = is_decision_maker_title(raw_title) if raw_title else (False, "")
+                    if not ok:
+                        ok, kw = is_decision_maker_title(snippet) if snippet else (False, "")
+                    if ok:
+                        role = kw
+
+                candidate = {
+                    "name": name,
+                    "title": role,
+                    "platform": (
+                        "LinkedIn"
+                        if platform_key == "linkedin"
+                        else "Google Maps"
+                        if platform_key == "google_maps"
+                        else "Facebook"
+                        if platform_key == "facebook"
+                        else "Instagram"
+                        if platform_key == "instagram"
+                        else "Yelp"
+                        if platform_key == "yelp"
+                        else "Web"
+                    ),
+                    "profile_url": u,
+                    "confidence": ("MEDIUM" if (name and role) else "LOW"),
+                    "reasoning": snippet or raw_title,
+                }
+                if not _is_valid_decision_maker(candidate):
+                    continue
+                if u in seen:
+                    continue
+                seen.add(u)
+                waterfall_out.append(candidate)
+                if len(waterfall_out) >= max_people:
+                    return waterfall_out[:max_people]
 
         if self.llm is not None:
+            out: list[dict[str, Any]] = list(waterfall_out)
+            if len(out) >= max_people:
+                return out[:max_people]
+            remaining = max_people - len(out)
+            seen: set[str] = set()
+            for x in out:
+                u = (x.get("profile_url") or "").strip()
+                if u:
+                    seen.add(u)
             logger.info(
                 "scraper.process_company.llm company_name=%s platforms=%s max_people=%s",
                 (company_name[:200] if company_name else ""),
                 selected,
-                max_people,
+                remaining,
             )
             people = await self.llm.research_decision_makers(
                 company_name=company_name,
@@ -572,11 +812,11 @@ class ScraperService:
                 google_maps_url=google_maps_url,
                 website=website,
                 platforms=selected,
-                max_people=max_people,
+                search_results=deep_results or None,
+                max_people=remaining,
             )
-            out: list[dict[str, Any]] = []
             for p in people:
-                out.append(
+                item = (
                     {
                         "name": p.get("name"),
                         "title": p.get("title"),
@@ -586,6 +826,16 @@ class ScraperService:
                         "reasoning": p.get("reasoning"),
                     }
                 )
+                if not _is_valid_decision_maker(item):
+                    continue
+                u = (item.get("profile_url") or "").strip()
+                if u and u in seen:
+                    continue
+                if u:
+                    seen.add(u)
+                out.append(item)
+                if len(out) >= max_people:
+                    break
             return out[:max_people]
             
         linkedin_results = await self.search_linkedin(company_name, location, search_limit=5)

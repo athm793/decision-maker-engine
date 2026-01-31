@@ -202,10 +202,19 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
                         <input
                           type="checkbox"
                           checked={selectedPlatforms.includes(p.key)}
+                          disabled={p.key === 'linkedin'}
                           onChange={(e) => {
                             setSelectedPlatforms((prev) => {
-                              if (e.target.checked) return [...prev, p.key];
-                              return prev.filter((x) => x !== p.key);
+                              let next = prev;
+                              if (e.target.checked) {
+                                next = Array.from(new Set([...prev, p.key]));
+                              } else {
+                                next = prev.filter((x) => x !== p.key);
+                              }
+                              if (!next.includes('linkedin')) {
+                                next = ['linkedin', ...next];
+                              }
+                              return next;
                             });
                           }}
                           className="accent-[var(--accent)]"
@@ -224,7 +233,7 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
                       onChange={(e) => setDeepSearch(e.target.checked)}
                       className="accent-[var(--accent)]"
                     />
-                    Deep Search (+1 credit per contact found)
+                    Deep Search (slower, better evidence) (+1 credit per contact found)
                   </label>
                   {errors.includes('platforms') && (
                     <div className="text-xs text-[color:var(--danger)]">Select at least one platform.</div>

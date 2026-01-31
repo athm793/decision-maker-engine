@@ -37,9 +37,9 @@ class WebSearchService:
             await page.close()
 
 
-_LINKEDIN_NAME_PATTERNS = [
-    re.compile(r"^(.+?)\s+-\s+.+?\s+\|\s+LinkedIn\s*$", re.IGNORECASE),
-    re.compile(r"^(.+?)\s+\|\s+LinkedIn\s*$", re.IGNORECASE),
+_PERSON_NAME_PATTERNS = [
+    re.compile(r"^(.+?)\s+-\s+.+?\s+\|\s+(LinkedIn|Facebook|Instagram|Yelp)\s*$", re.IGNORECASE),
+    re.compile(r"^(.+?)\s+\|\s+(LinkedIn|Facebook|Instagram|Yelp)\s*$", re.IGNORECASE),
 ]
 
 
@@ -47,9 +47,37 @@ def guess_person_name_from_title(title: str) -> str | None:
     t = (title or "").strip()
     if not t:
         return None
-    for rx in _LINKEDIN_NAME_PATTERNS:
+    for rx in _PERSON_NAME_PATTERNS:
         m = rx.match(t)
         if m:
             return m.group(1).strip()
     return None
 
+
+def guess_person_title_from_title(title: str) -> str | None:
+    t = (title or "").strip()
+    if not t:
+        return None
+
+    t = re.sub(r"\s+\|\s*(LinkedIn|Facebook|Instagram|Yelp)\s*$", "", t, flags=re.IGNORECASE).strip()
+    if not t:
+        return None
+
+    parts = [p.strip() for p in t.split(" - ") if p.strip()]
+    if len(parts) < 2:
+        return None
+
+    role = parts[1]
+    role = re.split(r"\s+\bat\b\s+", role, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    role = re.sub(r"\s+", " ", role).strip()
+    return role or None
+
+
+def guess_person_name_from_text(text: str) -> str | None:
+    t = (text or "").strip()
+    if not t:
+        return None
+    m = re.search(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b", t)
+    if not m:
+        return None
+    return m.group(1).strip()

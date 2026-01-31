@@ -6,6 +6,7 @@ from app.models.job import Job, JobStatus
 from app.models.decision_maker import DecisionMaker
 from app.models.credit_state import CreditState
 from app.schemas.job import JobCreate, JobResponse
+from app.services.decision_maker_rules import is_decision_maker_title
 from app.services.scraper import ScraperService
 import json
 import asyncio
@@ -457,6 +458,11 @@ async def _process_job_task(job_id: int):
         deep_search = bool(job_options.get("deep_search"))
         credits_per_contact = platforms_multiplier + (1 if deep_search else 0)
         found_total = 0
+        credit_state = db.query(CreditState).filter(CreditState.id == 1).first()
+        if credit_state is None:
+            credit_state = CreditState(id=1, balance=int(os.getenv("CREDITS_INITIAL_BALANCE", "0") or "0"))
+            db.add(credit_state)
+            db.commit()
         
         company_col = mappings.get("company_name")
         location_col = mappings.get("location", "")
@@ -614,11 +620,10 @@ async def _process_job_task(job_id: int):
                     if not is_usable_company:
                         break
 
-                    credit_state = db.query(CreditState).filter(CreditState.id == 1).first()
-                    if credit_state is None:
-                        credit_state = CreditState(id=1, balance=int(os.getenv("CREDITS_INITIAL_BALANCE", "0") or "0"))
-                        db.add(credit_state)
-                        db.commit()
+                    title_candidate = _text(res.get("title"))
+                    ok_title, _ = is_decision_maker_title(title_candidate)
+                    if not ok_title:
+                        continue
 
                     if credit_state.balance < credits_per_contact:
                         job.stop_reason = "credits_exhausted"
@@ -635,7 +640,7 @@ async def _process_job_task(job_id: int):
                     credit_state.balance -= credits_per_contact
 
                     name_out = _non_empty(res.get("name"), "Unknown")
-                    title_out = _non_empty(res.get("title"), "Unknown")
+                    title_out = title_candidate
                     platform_out = _non_empty(res.get("platform", "LinkedIn"), "Unknown")
 
                     dm = DecisionMaker(
@@ -746,6 +751,8 @@ async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: S
     selected = [p for p in (job_in.selected_platforms or []) if isinstance(p, str) and p.strip()]
     if not selected:
         raise HTTPException(status_code=400, detail="Select at least one platform")
+    if "linkedin" not in selected:
+        selected = ["linkedin", *selected]
 
     required_cols = [(k, job_in.mappings.get(k)) for k in required_keys]
     rows = job_in.file_content or []
@@ -901,11 +908,26 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
 
     company_cols: list[str] = []
     seen_company_cols: set[str] = set()
+    website_input_col = _text((mappings or {}).get("website"))
+
+    def _exclude_company_col(raw: object) -> bool:
+        k = _text(raw)
+        if not k:
+            return True
+        if website_input_col and k == website_input_col:
+            return True
+        kl = k.lower().replace("_", " ").strip()
+        if "website" in kl:
+            return True
+        return False
+
     if job and isinstance(job.companies_data, list) and len(job.companies_data) > 0 and isinstance(job.companies_data[0], dict):
         for row in job.companies_data:
             if not isinstance(row, dict):
                 continue
             for k in row.keys():
+                if _exclude_company_col(k):
+                    continue
                 if k in seen_company_cols:
                     continue
                 seen_company_cols.add(k)
@@ -915,6 +937,8 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
         payload = _parse_uploaded_company_data(getattr(dm, "uploaded_company_data", None))
         for k in payload.keys():
             ks = str(k)
+            if _exclude_company_col(ks):
+                continue
             if ks in seen_company_cols:
                 continue
             seen_company_cols.add(ks)
@@ -927,7 +951,6 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
             "Company Name",
             "Company Type",
             "Company Location",
-            "Company Website",
             "Contact Name",
             "Contact Job Title",
             "Platform",
@@ -948,7 +971,6 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
                 _text(resolved.get("company_name", "")),
                 _text(resolved.get("company_type", "")),
                 company_location,
-                _text(resolved.get("company_website", "")),
                 _non_empty(getattr(dm, "name", ""), "Unknown"),
                 _non_empty(getattr(dm, "title", ""), "Unknown"),
                 _non_empty(getattr(dm, "platform", ""), "Unknown"),

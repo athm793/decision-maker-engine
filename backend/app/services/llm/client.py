@@ -3,6 +3,7 @@ import json
 from typing import Any
 
 from app.core.settings import settings
+from app.services.decision_maker_rules import decision_maker_query_keywords
 
 
 class LLMDisabledError(RuntimeError):
@@ -67,9 +68,11 @@ class OpenAICompatibleLLM:
         location: str | None = None,
         google_maps_url: str | None = None,
         website: str | None = None,
+        search_results: list[dict[str, Any]] | None = None,
         platforms: list[str] | None = None,
         max_people: int = 3,
     ) -> list[dict[str, Any]]:
+        role_keywords = [str(k).strip().strip('"') for k in decision_maker_query_keywords()]
         system = (
             "You are a research assistant. Find real people who are decision makers for the given company. "
             "Return only JSON."
@@ -80,6 +83,7 @@ class OpenAICompatibleLLM:
             "location": location or "",
             "google_maps_url": google_maps_url or "",
             "website": website or "",
+            "search_results": search_results or [],
             "platforms": platforms or [],
             "max_people": max_people,
             "output_schema": {
@@ -98,6 +102,8 @@ class OpenAICompatibleLLM:
                 "Only include people you have strong evidence for.",
                 "Prefer LinkedIn profile URLs when available.",
                 "Confidence must be one of HIGH, MEDIUM, LOW.",
+                f"Each person title must include at least one decision-maker keyword: {', '.join(role_keywords)}.",
+                "Exclude staff/support roles like assistant, intern, coordinator, receptionist, technician, support, customer service, representative, specialist, associate.",
             ],
         }
 
