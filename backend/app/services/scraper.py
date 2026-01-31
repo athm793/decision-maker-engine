@@ -15,6 +15,64 @@ def _infer_city_country_from_search_results(items: list[dict[str, Any]]) -> tupl
     city = ""
     country = ""
     rx = re.compile(r"\b([A-Z][a-zA-Z .'-]{2,}),\s*([A-Z][a-zA-Z .'-]{2,})\b")
+    country_map = {
+        "united states": "United States",
+        "usa": "United States",
+        "u.s.": "United States",
+        "us": "United States",
+        "united kingdom": "United Kingdom",
+        "uk": "United Kingdom",
+        "great britain": "United Kingdom",
+        "england": "United Kingdom",
+        "scotland": "United Kingdom",
+        "wales": "United Kingdom",
+        "canada": "Canada",
+        "australia": "Australia",
+        "new zealand": "New Zealand",
+        "ireland": "Ireland",
+        "germany": "Germany",
+        "france": "France",
+        "spain": "Spain",
+        "italy": "Italy",
+        "netherlands": "Netherlands",
+        "sweden": "Sweden",
+        "norway": "Norway",
+        "denmark": "Denmark",
+        "finland": "Finland",
+        "switzerland": "Switzerland",
+        "austria": "Austria",
+        "belgium": "Belgium",
+        "portugal": "Portugal",
+        "brazil": "Brazil",
+        "mexico": "Mexico",
+        "india": "India",
+        "japan": "Japan",
+        "singapore": "Singapore",
+        "united arab emirates": "United Arab Emirates",
+        "uae": "United Arab Emirates",
+        "south africa": "South Africa",
+    }
+    us_state_names = {
+        "alabama","alaska","arizona","arkansas","california","colorado","connecticut","delaware","florida","georgia","hawaii","idaho","illinois","indiana","iowa","kansas","kentucky","louisiana","maine","maryland","massachusetts","michigan","minnesota","mississippi","missouri","montana","nebraska","nevada","new hampshire","new jersey","new mexico","new york","north carolina","north dakota","ohio","oklahoma","oregon","pennsylvania","rhode island","south carolina","south dakota","tennessee","texas","utah","vermont","virginia","washington","west virginia","wisconsin","wyoming",
+    }
+    us_state_abbrs = {"AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"}
+
+    def infer_country_from_text(text: str) -> str:
+        t = (text or "").strip()
+        if not t:
+            return ""
+        tl = t.lower()
+        for k, v in country_map.items():
+            if re.search(rf"\b{re.escape(k)}\b", tl):
+                return v
+        for ab in us_state_abbrs:
+            if re.search(rf"\b{ab}\b", t):
+                return "United States"
+        for st in us_state_names:
+            if re.search(rf"\b{re.escape(st)}\b", tl):
+                return "United States"
+        return ""
+
     for item in items:
         snippet = str(item.get("snippet") or "")
         title = str(item.get("title") or "")
@@ -25,7 +83,11 @@ def _infer_city_country_from_search_results(items: list[dict[str, Any]]) -> tupl
             if not city and a and not re.search(r"\d", a):
                 city = a
             if not country and b and not re.search(r"\d", b) and len(b) > 2:
-                country = b
+                country = infer_country_from_text(b) or b
+        if city and country:
+            break
+        if not country:
+            country = infer_country_from_text(text)
         if city and country:
             break
     return (city, country)
@@ -36,6 +98,8 @@ class ScraperService:
         self.context = None
         self.llm = None
         self.web_search = None
+        self._search_cache: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        self._enrich_cache: dict[tuple[str, str, str, str, int, bool], dict[str, str]] = {}
 
     async def start(self):
         if not self.browser:
@@ -84,24 +148,49 @@ class ScraperService:
         base = re.sub(r"\s+", " ", base).strip()
         return base.title() if base else ""
 
+    async def _cached_search(self, query: str, limit: int) -> list[dict[str, Any]]:
+        q = (query or "").strip()
+        limit = max(1, min(int(limit or 5), 25))
+        if not q or self.web_search is None:
+            return []
+        key = (q, limit)
+        cached = self._search_cache.get(key)
+        if cached is not None:
+            return cached
+        try:
+            items = await self.web_search.search_duckduckgo(q, limit=limit)
+        except Exception:
+            items = []
+        self._search_cache[key] = items
+        return items
+
     async def enrich_company(
         self,
         company_name: str | None,
         location: str = "",
         google_maps_url: str | None = None,
         website: str | None = None,
+        search_limit: int = 5,
     ) -> dict[str, str]:
         if not self.browser:
             await self.start()
 
+        key = (
+            str(company_name or "").strip().lower(),
+            str(location or "").strip().lower(),
+            str(google_maps_url or "").strip(),
+            str(website or "").strip().lower(),
+            int(search_limit or 5),
+            bool(self.llm),
+        )
+        cached_enrich = self._enrich_cache.get(key)
+        if cached_enrich is not None:
+            return cached_enrich
+
         search_results: list[dict[str, Any]] = []
-        if self.web_search is not None:
-            q = " ".join([p for p in [str(company_name or "").strip(), str(location or "").strip(), str(website or "").strip()] if p])
-            if q:
-                try:
-                    search_results = await self.web_search.search_duckduckgo(q, limit=5)
-                except Exception:
-                    search_results = []
+        q = " ".join([p for p in [str(company_name or "").strip(), str(location or "").strip(), str(website or "").strip()] if p])
+        if q:
+            search_results = await self._cached_search(q, limit=search_limit)
 
         if self.llm is not None:
             logger.info(
@@ -128,23 +217,27 @@ class ScraperService:
                 country = country or inferred_country
             if re.search(r"https?://|www\.", name, flags=re.IGNORECASE):
                 name = ""
-            return {
+            out = {
                 "company_name": name,
                 "company_website": site,
                 "company_type": ctype,
                 "company_city": city,
                 "company_country": country,
             }
+            self._enrich_cache[key] = out
+            return out
 
         guessed = self._guess_company_name_from_website(website)
         inferred_city, inferred_country = _infer_city_country_from_search_results(search_results)
-        return {
+        out = {
             "company_name": guessed,
             "company_website": (website or "").strip(),
             "company_type": "",
             "company_city": inferred_city,
             "company_country": inferred_country,
         }
+        self._enrich_cache[key] = out
+        return out
 
     async def search_linkedin(self, company_name: str, location: str = "") -> List[Dict[str, Any]]:
         results = []
@@ -153,7 +246,7 @@ class ScraperService:
                 return []
 
             q = f"{company_name} {location} (CEO OR Founder OR Owner) site:linkedin.com/in"
-            items = await self.web_search.search_duckduckgo(q, limit=5)
+            items = await self._cached_search(q, limit=5)
             for item in items:
                 url = item.get("url")
                 if not url or "linkedin.com/in" not in url:
@@ -176,7 +269,7 @@ class ScraperService:
             
         return results
 
-    async def search_platform(self, platform: str, company_name: str, location: str = "") -> List[Dict[str, Any]]:
+    async def search_platform(self, platform: str, company_name: str, location: str = "", search_limit: int = 3) -> List[Dict[str, Any]]:
         if platform == "linkedin":
             return await self.search_linkedin(company_name, location)
 
@@ -185,7 +278,7 @@ class ScraperService:
 
         if platform == "google_maps":
             q = f"{company_name} {location} site:google.com/maps"
-            items = await self.web_search.search_duckduckgo(q, limit=3)
+            items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
             for item in items:
                 url = item.get("url")
@@ -205,7 +298,7 @@ class ScraperService:
 
         if platform == "facebook":
             q = f"{company_name} {location} (CEO OR founder OR owner) site:facebook.com"
-            items = await self.web_search.search_duckduckgo(q, limit=3)
+            items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
             for item in items:
                 url = item.get("url")
@@ -225,7 +318,7 @@ class ScraperService:
 
         if platform == "instagram":
             q = f"{company_name} {location} (founder OR ceo OR owner) site:instagram.com"
-            items = await self.web_search.search_duckduckgo(q, limit=3)
+            items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
             for item in items:
                 url = item.get("url")
@@ -245,7 +338,7 @@ class ScraperService:
 
         if platform == "yelp":
             q = f"{company_name} {location} site:yelp.com"
-            items = await self.web_search.search_duckduckgo(q, limit=3)
+            items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
             for item in items:
                 url = item.get("url")
@@ -265,14 +358,14 @@ class ScraperService:
 
         return []
 
-    async def search_google_maps(self, company_name: str, location: str = "") -> List[Dict[str, Any]]:
+    async def search_google_maps(self, company_name: str, location: str = "", search_limit: int = 3) -> List[Dict[str, Any]]:
         results = []
         try:
             if not self.web_search:
                 return []
 
             q = f"{company_name} {location} owner "
-            items = await self.web_search.search_duckduckgo(q, limit=3)
+            items = await self._cached_search(q, limit=search_limit)
             for item in items:
                 url = item.get("url")
                 if not url:
@@ -301,6 +394,7 @@ class ScraperService:
         platforms: list[str] | None = None,
         max_people: int | None = None,
         remaining_total: int | None = None,
+        search_limit: int | None = None,
     ) -> List[Dict[str, Any]]:
         if not self.browser:
             await self.start()
@@ -353,7 +447,7 @@ class ScraperService:
             out: list[dict[str, Any]] = []
             seen: set[str] = set()
             for platform in selected:
-                items = await self.search_platform(platform, company_name, location)
+                items = await self.search_platform(platform, company_name, location, search_limit=(search_limit or 3))
                 for item in items:
                     url = item.get("profile_url") or ""
                     if url and url in seen:
@@ -366,6 +460,6 @@ class ScraperService:
             return out
             
         linkedin_results = await self.search_linkedin(company_name, location)
-        gmaps_results = await self.search_google_maps(company_name, location)
+        gmaps_results = await self.search_google_maps(company_name, location, search_limit=(search_limit or 3))
         
         return linkedin_results + gmaps_results

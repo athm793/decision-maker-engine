@@ -16,7 +16,7 @@ class JobCreate(BaseModel):
     file_content: List[Dict[str, Any]] # Passing full content for now (MVP)
     selected_platforms: List[str] = ["google_maps", "linkedin"]
     max_contacts_total: int = 50
-    max_contacts_per_company: int = 3
+    max_contacts_per_company: int = 1
 
 class JobResponse(BaseModel):
     id: int

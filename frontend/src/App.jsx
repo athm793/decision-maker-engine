@@ -14,6 +14,7 @@ function App() {
   const [previewData, setPreviewData] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [jobId, setJobId] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
   
@@ -169,6 +170,7 @@ function App() {
     setFile(selectedFile);
     setIsUploading(true);
     setError(null);
+    setNotice(null);
 
     const formData = new FormData();
     formData.append('file', selectedFile);
@@ -195,6 +197,7 @@ function App() {
     try {
       setStep('creating_job');
       setError(null);
+      setNotice(null);
       console.groupCollapsed('[create job] start');
       console.log('filename:', file?.name);
       console.log('mappings:', mappings);
@@ -218,14 +221,55 @@ function App() {
         }
 
         try {
-            console.log('[create job] POST /api/jobs rows=%s', data.length);
+            const seen = new Set();
+            const unique = [];
+            let duplicates = 0;
+            for (const obj of data) {
+              const key = headers.map((h) => String(obj?.[h] ?? '')).join('\u001f');
+              if (seen.has(key)) {
+                duplicates += 1;
+                continue;
+              }
+              seen.add(key);
+              unique.push(obj);
+            }
+            if (duplicates > 0) {
+              setNotice(`${duplicates} duplicate row${duplicates === 1 ? '' : 's'} were removed before processing.`);
+            }
+
+            const requiredKeys = ['company_name', 'google_maps_url', 'industry', 'city', 'country', 'location', 'website'];
+            const missingMappings = requiredKeys.filter((k) => !mappings?.[k]);
+            if (missingMappings.length > 0) {
+              setError(`Missing required mappings: ${missingMappings.join(', ')}`);
+              setStep('mapping');
+              console.groupEnd();
+              return;
+            }
+            const requiredColumns = requiredKeys.map((k) => mappings[k]);
+            let blankRows = 0;
+            for (const rowObj of unique) {
+              for (const col of requiredColumns) {
+                if (!String(rowObj?.[col] ?? '').trim()) {
+                  blankRows += 1;
+                  break;
+                }
+              }
+            }
+            if (blankRows > 0) {
+              setError(`Some rows have blank values in required columns. Fix your CSV and re-upload. (rows affected: ${blankRows})`);
+              setStep('mapping');
+              console.groupEnd();
+              return;
+            }
+
+            console.log('[create job] POST /api/jobs rows=%s', unique.length);
             const response = await axios.post('/api/jobs', {
                 filename: file.name,
                 mappings: mappings,
-                file_content: data,
+                file_content: unique,
                 selected_platforms: options?.selected_platforms || [],
                 max_contacts_total: options?.max_contacts_total || 50,
-                max_contacts_per_company: options?.max_contacts_per_company || 3,
+                max_contacts_per_company: options?.max_contacts_per_company || 1,
             });
             
             setJobId(response.data.id);
@@ -272,6 +316,7 @@ function App() {
     setFile(null);
     setPreviewData(null);
     setError(null);
+    setNotice(null);
     setStep('upload');
   };
 
@@ -279,6 +324,7 @@ function App() {
     setFile(null);
     setPreviewData(null);
     setError(null);
+    setNotice(null);
     setJobId(null);
     setJob(null);
     setResults([]);
@@ -292,6 +338,7 @@ function App() {
 
   const handleSelectJobFromHistory = (id) => {
     setError(null);
+    setNotice(null);
     setJobId(id);
     setJob(null);
     setResults([]);
@@ -389,14 +436,20 @@ function App() {
             onCancel={handleCancel}
             creditsBalance={creditsBalance}
             error={error}
+            notice={notice}
           />
         )}
         
         {step === 'creating_job' && (
-           <div className="flex flex-col items-center justify-center h-64 space-y-4">
-             <Loader2 className="w-10 h-10 text-[color:var(--accent)] animate-spin" />
-             <p className="text-lg mac-muted">Creating Job…</p>
-           </div>
+          <div className="flex flex-col items-center justify-center h-64 space-y-4">
+            {notice && (
+              <div className="mac-card p-4 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border))', background: 'color-mix(in srgb, var(--accent-weak) 60%, var(--surface))' }}>
+                {notice}
+              </div>
+            )}
+            <Loader2 className="w-10 h-10 text-[color:var(--accent)] animate-spin" />
+            <p className="text-lg mac-muted">Creating Job…</p>
+          </div>
         )}
 
         {step === 'processing' && job && (
@@ -426,6 +479,11 @@ function App() {
                 {error && (
                   <div className="mac-card p-4 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', color: 'var(--danger)' }}>
                     {error}
+                  </div>
+                )}
+                {notice && !error && (
+                  <div className="mac-card p-4 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border))', background: 'color-mix(in srgb, var(--accent-weak) 60%, var(--surface))' }}>
+                    {notice}
                   </div>
                 )}
 

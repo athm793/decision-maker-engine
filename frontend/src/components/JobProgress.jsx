@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -6,6 +6,35 @@ export function JobProgress({ job }) {
   const percentage = job.total_companies > 0 
     ? Math.round((job.processed_companies / job.total_companies) * 100) 
     : 0;
+
+  const [tickMs, setTickMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!job?.created_at) return;
+    if (!['queued', 'processing'].includes(job.status)) return;
+    const id = setInterval(() => setTickMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [job?.created_at, job?.status, job?.id]);
+
+  useEffect(() => {
+    if (['completed', 'failed', 'cancelled'].includes(job.status)) {
+      setTickMs(Date.now());
+    }
+  }, [job?.status]);
+
+  const elapsedLabel = useMemo(() => {
+    const start = new Date(job.created_at).getTime();
+    if (!Number.isFinite(start)) return '—';
+    const end = tickMs;
+    const ms = Math.max(0, end - start);
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad2 = (n) => String(n).padStart(2, '0');
+    if (hours > 0) return `${hours}:${pad2(minutes)}:${pad2(seconds)}`;
+    return `${minutes}:${pad2(seconds)}`;
+  }, [job?.created_at, tickMs]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -66,7 +95,7 @@ export function JobProgress({ job }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
           <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">
             <div className="text-xs mac-muted uppercase tracking-wide">Platforms</div>
             <div className="text-sm mt-1">
@@ -87,6 +116,12 @@ export function JobProgress({ job }) {
             {job.stop_reason === 'credits_exhausted' && (
               <div className="text-xs mt-1 mac-muted">Stopped: credits exhausted</div>
             )}
+          </div>
+          <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">
+            <div className="text-xs mac-muted uppercase tracking-wide">Elapsed</div>
+            <div className="text-sm mt-1">
+              {elapsedLabel}
+            </div>
           </div>
         </div>
 

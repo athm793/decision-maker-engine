@@ -51,6 +51,8 @@ def startup() -> None:
             missing.append(("credits_spent", "INTEGER"))
         if "stop_reason" not in existing:
             missing.append(("stop_reason", "TEXT"))
+        if "options" not in existing:
+            missing.append(("options", "TEXT"))
 
         if missing:
             with engine.begin() as conn:

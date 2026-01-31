@@ -3,11 +3,12 @@ import { ArrowRight } from 'lucide-react';
 
 const REQUIRED_FIELDS = [
   { key: 'company_name', label: 'Company Name', required: true },
-  { key: 'industry', label: 'Company Type', required: false },
-  { key: 'city', label: 'Company City', required: false },
-  { key: 'country', label: 'Company Country', required: false },
-  { key: 'location', label: 'Location (optional, improves lookup)', required: false },
-  { key: 'website', label: 'Company Website', required: false },
+  { key: 'google_maps_url', label: 'Google Maps URL', required: true },
+  { key: 'industry', label: 'Company Type', required: true },
+  { key: 'city', label: 'Company City', required: true },
+  { key: 'country', label: 'Company Country', required: true },
+  { key: 'location', label: 'Location', required: true },
+  { key: 'website', label: 'Company Website', required: true },
 ];
 
 const PLATFORM_OPTIONS = [
@@ -18,14 +19,14 @@ const PLATFORM_OPTIONS = [
   { key: 'yelp', label: 'Yelp' },
 ];
 
-export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance, error }) {
+export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance, error, notice }) {
   const [mappings, setMappings] = useState({});
   const [errors, setErrors] = useState([]);
   const [companyNameHint, setCompanyNameHint] = useState(null);
   const [websiteHint, setWebsiteHint] = useState(null);
-  const [selectedPlatforms, setSelectedPlatforms] = useState(['google_maps', 'linkedin']);
+  const [selectedPlatforms, setSelectedPlatforms] = useState(['linkedin']);
   const [maxContactsTotal, setMaxContactsTotal] = useState(50);
-  const [maxContactsPerCompany, setMaxContactsPerCompany] = useState(3);
+  const [maxContactsPerCompany, setMaxContactsPerCompany] = useState(1);
 
   useEffect(() => {
     if (previewData?.suggested_mappings) {
@@ -98,9 +99,7 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
       setWebsiteHint(null);
     }
 
-    if (!selectedPlatforms || selectedPlatforms.length === 0) {
-      newErrors.push('platforms');
-    }
+    if (!selectedPlatforms || selectedPlatforms.length === 0) newErrors.push('platforms');
 
     if (!maxContactsTotal || maxContactsTotal < 1) {
       newErrors.push('max_total');
@@ -138,6 +137,11 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
       {error && (
         <div className="mb-4 p-4 mac-card text-sm" style={{ borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', color: 'var(--danger)' }}>
           {error}
+        </div>
+      )}
+      {notice && (
+        <div className="mb-4 p-4 mac-card text-sm" style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border))', background: 'color-mix(in srgb, var(--accent-weak) 60%, var(--surface))' }}>
+          {notice}
         </div>
       )}
       <div className="mac-card overflow-hidden">
@@ -287,7 +291,8 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
           </button>
           <button
             onClick={handleConfirm}
-            className="mac-button-primary px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
+            disabled={!selectedPlatforms || selectedPlatforms.length === 0}
+            className={`mac-button-primary px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${(!selectedPlatforms || selectedPlatforms.length === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             Start Processing
             <ArrowRight className="w-4 h-4" />
