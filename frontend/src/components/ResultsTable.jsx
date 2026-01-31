@@ -108,7 +108,7 @@ export function ResultsTable({
         </select>
       </div>
 
-      <div className="mac-card overflow-hidden">
+      <div className="mac-card overflow-hidden mac-appear mac-hover-lift">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-[10px] mac-muted uppercase bg-[color:var(--surface2)]">

@@ -21,18 +21,18 @@ export function FileUpload({ onFileSelect, isUploading, error }) {
   });
 
   return (
-    <div className="w-full max-w-2xl mx-auto p-6">
+    <div className="w-full max-w-2xl mx-auto p-6 mac-appear">
       <div
         {...getRootProps()}
         className={twMerge(
-          "border-2 border-dashed rounded-2xl p-10 transition-all duration-200 ease-in-out cursor-pointer flex flex-col items-center justify-center text-center",
+          "border-2 border-dashed rounded-2xl p-10 transition-all duration-200 ease-in-out cursor-pointer flex flex-col items-center justify-center text-center mac-hover-lift",
           isDragActive ? "border-[color:var(--accent)] bg-[color:var(--accent-weak)]" : "border-[color:var(--border)] hover:border-[color:var(--accent)] hover:bg-[color:var(--surface2)]",
           error ? "border-[color:var(--danger)] bg-[color:var(--danger-weak)]" : ""
         )}
       >
         <input {...getInputProps()} />
         
-        <div className="mac-card p-4 rounded-full mb-4">
+        <div className="mac-card p-4 rounded-full mb-4 mac-sheen">
           <UploadCloud className="w-8 h-8 text-[color:var(--accent)]" />
         </div>
 

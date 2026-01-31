@@ -74,7 +74,7 @@ export function JobProgress({ job, timerStartMs }) {
 
   return (
     <div className="w-full max-w-6xl mx-auto px-6 space-y-6">
-      <div className="mac-card p-6">
+      <div className="mac-card p-6 mac-appear mac-hover-lift">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-semibold flex items-center gap-2">

@@ -136,18 +136,18 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
   if (!previewData) return null;
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-6">
+    <div className="w-full max-w-4xl mx-auto p-6 mac-appear">
       {error && (
-        <div className="mb-4 p-4 mac-card text-sm" style={{ borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', color: 'var(--danger)' }}>
+        <div className="mb-4 p-4 mac-card text-sm mac-hover-lift" style={{ borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', color: 'var(--danger)' }}>
           {error}
         </div>
       )}
       {notice && (
-        <div className="mb-4 p-4 mac-card text-sm" style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border))', background: 'color-mix(in srgb, var(--accent-weak) 60%, var(--surface))' }}>
+        <div className="mb-4 p-4 mac-card text-sm mac-hover-lift" style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border))', background: 'color-mix(in srgb, var(--accent-weak) 60%, var(--surface))' }}>
           {notice}
         </div>
       )}
-      <div className="mac-card overflow-hidden">
+      <div className="mac-card overflow-hidden mac-hover-lift">
         <div className="p-6 border-b border-[color:var(--border)]">
           <h2 className="text-xl font-semibold">Map Columns</h2>
           <p className="mac-muted mt-1">

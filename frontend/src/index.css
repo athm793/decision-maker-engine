@@ -52,12 +52,23 @@ body {
   color: var(--text);
 }
 
+@keyframes macFadeUp {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); filter: blur(2px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+@keyframes macSheen {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 100% 50%; }
+}
+
 @layer components {
   .mac-card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 16px;
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
   }
 
   html.dark .mac-card {
@@ -96,6 +107,21 @@ body {
     color: var(--danger);
   }
 
+  .mac-appear {
+    animation: macFadeUp 280ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  }
+
+  .mac-hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06), 0 14px 34px rgba(0, 0, 0, 0.10);
+  }
+
+  .mac-sheen {
+    background-image: linear-gradient(90deg, var(--accent-weak), color-mix(in srgb, var(--accent) 18%, transparent), var(--accent-weak));
+    background-size: 200% 200%;
+    animation: macSheen 1800ms ease-in-out infinite alternate;
+  }
+
   .mac-input {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -113,4 +139,10 @@ body {
   .mac-muted {
     color: var(--muted);
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mac-appear { animation: none; }
+  .mac-hover-lift:hover { transform: none; }
+  .mac-sheen { animation: none; }
 }

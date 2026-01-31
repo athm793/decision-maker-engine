@@ -245,7 +245,8 @@ class ScraperService:
             if not self.web_search:
                 return []
 
-            q = f"{company_name} {location} (CEO OR Founder OR Owner) site:linkedin.com/in"
+            titles = ["CEO", "Founder", "Owner", "President", "\"General Manager\""]
+            q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:linkedin.com/in"
             items = await self._cached_search(q, limit=5)
             for item in items:
                 url = item.get("url")
@@ -281,14 +282,11 @@ class ScraperService:
             out = await self.search_linkedin(company_name, location)
             if deep_search and self.web_search:
                 titles = [
-                    "President",
-                    "\"General Manager\"",
                     "\"Managing Director\"",
                     "\"Managing Partner\"",
                     "\"Managing Member\"",
                     "Partner",
                     "Principal",
-                    "CEO",
                     "COO",
                     "Director",
                     "\"Operations Manager\"",
@@ -530,6 +528,34 @@ class ScraperService:
         if max_people <= 0:
             return []
 
+        if selected and self.web_search:
+            logger.info(
+                "scraper.process_company.waterfall company_name=%s platforms=%s max_people=%s",
+                (company_name[:200] if company_name else ""),
+                selected,
+                max_people,
+            )
+            out: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for platform in selected:
+                items = await self.search_platform(
+                    platform,
+                    company_name,
+                    location,
+                    search_limit=(search_limit or 3),
+                    deep_search=deep_search,
+                )
+                for item in items:
+                    url = item.get("profile_url") or ""
+                    if url and url in seen:
+                        continue
+                    if url:
+                        seen.add(url)
+                    out.append(item)
+                    if len(out) >= max_people:
+                        return out
+            return out
+
         if self.llm is not None:
             logger.info(
                 "scraper.process_company.llm company_name=%s platforms=%s max_people=%s",
@@ -558,34 +584,6 @@ class ScraperService:
                     }
                 )
             return out[:max_people]
-
-        if selected:
-            logger.info(
-                "scraper.process_company.waterfall company_name=%s platforms=%s max_people=%s",
-                (company_name[:200] if company_name else ""),
-                selected,
-                max_people,
-            )
-            out: list[dict[str, Any]] = []
-            seen: set[str] = set()
-            for platform in selected:
-                items = await self.search_platform(
-                    platform,
-                    company_name,
-                    location,
-                    search_limit=(search_limit or 3),
-                    deep_search=deep_search,
-                )
-                for item in items:
-                    url = item.get("profile_url") or ""
-                    if url and url in seen:
-                        continue
-                    if url:
-                        seen.add(url)
-                    out.append(item)
-                    if len(out) >= max_people:
-                        return out
-            return out
             
         linkedin_results = await self.search_linkedin(company_name, location)
         gmaps_results = await self.search_google_maps(company_name, location, search_limit=(search_limit or 3))
