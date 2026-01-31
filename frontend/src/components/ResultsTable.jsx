@@ -157,21 +157,7 @@ export function ResultsTable({
                     {dm.title || ''}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex flex-col gap-1">
-                      <span className="mac-muted">{dm.platform || ''}</span>
-                      {dm.profile_url ? (
-                        <a
-                          href={dm.profile_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[color:var(--accent)] hover:opacity-80 text-xs flex items-center gap-1 w-fit"
-                        >
-                          Open Source <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ) : (
-                        <span className="mac-muted text-xs">No source</span>
-                      )}
-                    </div>
+                    <span className="mac-muted">{dm.platform || ''}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getConfidenceBadge(dm.confidence_score)}

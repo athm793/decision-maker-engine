@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 def _text(raw: object) -> str:
     return str(raw or "").strip()
 
+def _effective_query_keywords(query_keywords: list[str] | None) -> list[str]:
+    qk = [str(x).strip() for x in (query_keywords or []) if str(x).strip()]
+    return qk if qk else decision_maker_query_keywords()
+
 def _website_host(website: str | None) -> str:
     raw = _text(website)
     if not raw:
@@ -35,8 +39,9 @@ def _build_deep_search_queries(
     location: str,
     selected_platforms: list[str],
     website: str | None,
+    query_keywords: list[str] | None,
 ) -> list[str]:
-    titles = decision_maker_query_keywords()
+    titles = _effective_query_keywords(query_keywords)
     base = f"\"{company_name}\" {location} ({' OR '.join(titles)})"
     out: list[str] = []
     for p in selected_platforms:
@@ -295,13 +300,19 @@ class ScraperService:
         self._enrich_cache[key] = out
         return out
 
-    async def search_linkedin(self, company_name: str, location: str = "", search_limit: int = 5) -> List[Dict[str, Any]]:
+    async def search_linkedin(
+        self,
+        company_name: str,
+        location: str = "",
+        search_limit: int = 5,
+        query_keywords: list[str] | None = None,
+    ) -> List[Dict[str, Any]]:
         results = []
         try:
             if not self.web_search:
                 return []
 
-            titles = decision_maker_query_keywords()
+            titles = _effective_query_keywords(query_keywords)
             q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:linkedin.com/in"
             items = await self._cached_search(q, limit=search_limit or 5)
             for item in items:
@@ -334,11 +345,12 @@ class ScraperService:
         location: str = "",
         search_limit: int = 3,
         deep_search: bool = False,
+        query_keywords: list[str] | None = None,
     ) -> List[Dict[str, Any]]:
         if platform == "linkedin":
-            out = await self.search_linkedin(company_name, location, search_limit=search_limit or 5)
+            out = await self.search_linkedin(company_name, location, search_limit=search_limit or 5, query_keywords=query_keywords)
             if deep_search and self.web_search:
-                titles = decision_maker_query_keywords()
+                titles = _effective_query_keywords(query_keywords)
                 q2 = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:linkedin.com/in"
                 items2 = await self._cached_search(q2, limit=max(1, min(search_limit, 10)))
                 for item in items2:
@@ -374,7 +386,7 @@ class ScraperService:
             return []
 
         if platform == "google_maps":
-            titles = decision_maker_query_keywords()
+            titles = _effective_query_keywords(query_keywords)
             q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:google.com/maps"
             items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
@@ -432,7 +444,7 @@ class ScraperService:
             return out
 
         if platform == "facebook":
-            titles = decision_maker_query_keywords()
+            titles = _effective_query_keywords(query_keywords)
             q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:facebook.com"
             items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
@@ -494,7 +506,7 @@ class ScraperService:
             return out
 
         if platform == "instagram":
-            titles = decision_maker_query_keywords()
+            titles = _effective_query_keywords(query_keywords)
             q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:instagram.com"
             items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
@@ -556,7 +568,7 @@ class ScraperService:
             return out
 
         if platform == "yelp":
-            titles = decision_maker_query_keywords()
+            titles = _effective_query_keywords(query_keywords)
             q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:yelp.com"
             items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
@@ -653,6 +665,7 @@ class ScraperService:
         remaining_total: int | None = None,
         search_limit: int | None = None,
         deep_search: bool = False,
+        query_keywords: list[str] | None = None,
     ) -> List[Dict[str, Any]]:
         if not self.browser:
             await self.start()
@@ -704,6 +717,7 @@ class ScraperService:
                     location,
                     search_limit=(search_limit or 3),
                     deep_search=bool(deep_platform and platform == deep_platform),
+                    query_keywords=query_keywords,
                 )
                 for item in items:
                     url = item.get("profile_url") or ""
@@ -726,7 +740,7 @@ class ScraperService:
                     seen.add(u)
             allowed: set[str] = set(ordered_platforms)
             deep_limit = max(10, int(search_limit or 3) * 3)
-            queries = _build_deep_search_queries(company_name, location, ordered_platforms, website)
+            queries = _build_deep_search_queries(company_name, location, ordered_platforms, website, query_keywords)
             items: list[dict[str, Any]] = []
             for q in queries:
                 items.extend(await self._cached_search(q, limit=deep_limit))
@@ -838,7 +852,7 @@ class ScraperService:
                     break
             return out[:max_people]
             
-        linkedin_results = await self.search_linkedin(company_name, location, search_limit=5)
+        linkedin_results = await self.search_linkedin(company_name, location, search_limit=5, query_keywords=query_keywords)
         gmaps_results = await self.search_google_maps(company_name, location, search_limit=(search_limit or 3))
         
         return linkedin_results + gmaps_results

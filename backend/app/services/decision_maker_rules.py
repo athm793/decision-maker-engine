@@ -90,3 +90,51 @@ def decision_maker_query_keywords() -> list[str]:
         "Chairman",
     ]
 
+
+def build_query_keywords(seniorities: list[str] | None, departments: list[str] | None) -> list[str]:
+    base = decision_maker_query_keywords()
+    s_in = [str(x).strip() for x in (seniorities or []) if str(x).strip()]
+    d_in = [str(x).strip() for x in (departments or []) if str(x).strip()]
+
+    if not s_in and not d_in:
+        return base
+
+    s_norm: list[str] = []
+    seen_s: set[str] = set()
+    for s in s_in:
+        k = s.lower()
+        if k in seen_s:
+            continue
+        seen_s.add(k)
+        s_norm.append(s)
+
+    d_norm: list[str] = []
+    seen_d: set[str] = set()
+    for d in d_in:
+        k = d.lower()
+        if k in seen_d:
+            continue
+        seen_d.add(k)
+        d_norm.append(d)
+
+    out: list[str] = []
+    out.extend(["CEO", "Founder", "\"Co-Founder\"", "Owner", "President", "\"Managing Director\"", "\"General Manager\""])
+    out.extend(s_norm)
+
+    for s in s_norm or ["Head", "Director", "VP", "SVP", "Vice President", "Senior Vice President"]:
+        for d in d_norm:
+            out.append(f"\"{s} {d}\"")
+            out.append(f"\"{s} of {d}\"")
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for x in out:
+        xs = str(x).strip()
+        if not xs:
+            continue
+        k = xs.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        deduped.append(xs)
+    return deduped or base

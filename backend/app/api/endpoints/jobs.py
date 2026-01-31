@@ -6,7 +6,7 @@ from app.models.job import Job, JobStatus
 from app.models.decision_maker import DecisionMaker
 from app.models.credit_state import CreditState
 from app.schemas.job import JobCreate, JobResponse
-from app.services.decision_maker_rules import is_decision_maker_title
+from app.services.decision_maker_rules import build_query_keywords, is_decision_maker_title
 from app.services.scraper import ScraperService
 import json
 import asyncio
@@ -456,6 +456,13 @@ async def _process_job_task(job_id: int):
         platforms_multiplier = max(1, len(selected_platforms))
         job_options = getattr(job, "options", None) or {}
         deep_search = bool(job_options.get("deep_search"))
+        seniorities = job_options.get("seniorities")
+        departments = job_options.get("departments")
+        if not isinstance(seniorities, list):
+            seniorities = None
+        if not isinstance(departments, list):
+            departments = None
+        query_keywords = build_query_keywords(seniorities, departments)
         credits_per_contact = platforms_multiplier + (1 if deep_search else 0)
         found_total = 0
         credit_state = db.query(CreditState).filter(CreditState.id == 1).first()
@@ -482,8 +489,8 @@ async def _process_job_task(job_id: int):
             deep_search,
         )
 
-        concurrency = int(os.getenv("JOB_CONCURRENCY", "3") or "3")
-        concurrency = max(1, min(concurrency, 8))
+        concurrency = int(os.getenv("JOB_CONCURRENCY", "100") or "100")
+        concurrency = max(1, min(concurrency, 500))
         search_limit = 3
         enrichment_search_limit = 5
 
@@ -568,6 +575,7 @@ async def _process_job_task(job_id: int):
                 remaining_total=remaining_total,
                 search_limit=search_limit,
                 deep_search=deep_search,
+                query_keywords=query_keywords,
             )
 
             return {
@@ -780,7 +788,11 @@ async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: S
         max_contacts_per_company=job_in.max_contacts_per_company,
         credits_spent=0,
         stop_reason=None,
-        options={"deep_search": bool(job_in.deep_search)},
+        options={
+            "deep_search": bool(job_in.deep_search),
+            "seniorities": (job_in.seniorities or None),
+            "departments": (job_in.departments or None),
+        },
     )
     
     db.add(db_job)
@@ -836,7 +848,7 @@ async def get_job_results(job_id: int, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     mappings = job.column_mappings or {}
-    results = db.query(DecisionMaker).filter(DecisionMaker.job_id == job_id).all()
+    results = db.query(DecisionMaker).filter(DecisionMaker.job_id == job_id).order_by(DecisionMaker.id.asc()).all()
     return [_dm_to_response(dm, mappings) for dm in results]
 
 
@@ -844,7 +856,7 @@ async def get_job_results(job_id: int, db: Session = Depends(get_db)):
 async def get_job_results_paged(
     job_id: int,
     q: str | None = None,
-    limit: int = 25,
+    limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
@@ -874,7 +886,7 @@ async def get_job_results_paged(
         )
 
     total = query.count()
-    rows = query.order_by(DecisionMaker.id.desc()).offset(offset).limit(limit).all()
+    rows = query.order_by(DecisionMaker.id.asc()).offset(offset).limit(limit).all()
     items = [_dm_to_response(dm, mappings) for dm in rows]
     return DecisionMakerListResponse(items=items, total=total, limit=limit, offset=offset)
 
@@ -904,7 +916,7 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
             )
         )
 
-    rows = query.order_by(DecisionMaker.id.desc()).all()
+    rows = query.order_by(DecisionMaker.id.asc()).all()
 
     company_cols: list[str] = []
     seen_company_cols: set[str] = set()
@@ -954,7 +966,6 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
             "Contact Name",
             "Contact Job Title",
             "Platform",
-            "Platform Source URL",
             "Confidence",
             "Reasoning",
         ]
@@ -974,7 +985,6 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
                 _non_empty(getattr(dm, "name", ""), "Unknown"),
                 _non_empty(getattr(dm, "title", ""), "Unknown"),
                 _non_empty(getattr(dm, "platform", ""), "Unknown"),
-                _text(getattr(dm, "profile_url", "")),
                 _non_empty(getattr(dm, "confidence_score", ""), "UNKNOWN"),
                 _non_empty(getattr(dm, "reasoning", ""), "N/A"),
             ]

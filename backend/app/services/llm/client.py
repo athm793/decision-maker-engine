@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import weakref
 from typing import Any
 
 from app.core.settings import settings
@@ -8,6 +10,21 @@ from app.services.decision_maker_rules import decision_maker_query_keywords
 
 class LLMDisabledError(RuntimeError):
     pass
+
+
+DEFAULT_LLM_CONCURRENCY = 500
+_LLM_SEMAPHORES: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
+
+
+def _get_llm_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _LLM_SEMAPHORES.get(loop)
+    if sem is None:
+        limit = int(os.getenv("LLM_CONCURRENCY", str(DEFAULT_LLM_CONCURRENCY)) or str(DEFAULT_LLM_CONCURRENCY))
+        limit = max(1, limit)
+        sem = asyncio.Semaphore(limit)
+        _LLM_SEMAPHORES[loop] = sem
+    return sem
 
 
 def _coerce_people(payload: Any) -> list[dict[str, Any]]:
@@ -42,25 +59,32 @@ class OpenAICompatibleLLM:
         temperature: float,
         extra_headers: dict[str, str] | None = None,
     ) -> None:
-        from openai import OpenAI
+        from openai import AsyncOpenAI
+        import httpx
 
         kwargs: dict[str, Any] = {"api_key": api_key}
         if base_url:
             kwargs["base_url"] = base_url
         if extra_headers:
             kwargs["default_headers"] = extra_headers
-        self._client = OpenAI(**kwargs)
+        kwargs["http_client"] = httpx.AsyncClient(
+            limits=httpx.Limits(max_connections=2000, max_keepalive_connections=500),
+            timeout=httpx.Timeout(60.0),
+        )
+        self._client = AsyncOpenAI(**kwargs)
         self._model = model
         self._temperature = temperature
 
-    def _chat(self, messages: list[dict[str, str]]) -> str:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,
-            temperature=self._temperature,
-        )
-        content = response.choices[0].message.content
-        return content or ""
+    async def _chat(self, messages: list[dict[str, str]]) -> str:
+        sem = _get_llm_semaphore()
+        async with sem:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                temperature=self._temperature,
+            )
+            content = response.choices[0].message.content
+            return content or ""
 
     async def research_decision_makers(
         self,
@@ -112,7 +136,7 @@ class OpenAICompatibleLLM:
             {"role": "user", "content": json.dumps(user)},
         ]
 
-        text = await asyncio.to_thread(self._chat, messages)
+        text = await self._chat(messages)
         try:
             payload = json.loads(text)
         except Exception:
@@ -169,7 +193,7 @@ class OpenAICompatibleLLM:
             {"role": "user", "content": json.dumps(user)},
         ]
 
-        text = await asyncio.to_thread(self._chat, messages)
+        text = await self._chat(messages)
         try:
             payload = json.loads(text)
         except Exception:

@@ -14,10 +14,12 @@ class JobCreate(BaseModel):
     filename: str
     mappings: Dict[str, str]
     file_content: List[Dict[str, Any]] # Passing full content for now (MVP)
-    selected_platforms: List[str] = ["google_maps", "linkedin"]
+    selected_platforms: List[str] = ["linkedin"]
     max_contacts_total: int = 50
     max_contacts_per_company: int = 1
     deep_search: bool = False
+    seniorities: Optional[List[str]] = None
+    departments: Optional[List[str]] = None
 
 class JobResponse(BaseModel):
     id: int

@@ -25,6 +25,8 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
   const [websiteHint, setWebsiteHint] = useState(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState(['linkedin']);
   const [deepSearch, setDeepSearch] = useState(false);
+  const [senioritiesInput, setSenioritiesInput] = useState('');
+  const [departmentsInput, setDepartmentsInput] = useState('');
   const [maxContactsTotal, setMaxContactsTotal] = useState(50);
   const [maxContactsPerCompany, setMaxContactsPerCompany] = useState(1);
 
@@ -67,6 +69,13 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
     if (values.length === 0) return 0;
     const urlCount = values.filter(isUrlLike).length;
     return urlCount / values.length;
+  };
+
+  const parseList = (raw) => {
+    return String(raw || '')
+      .split(/[\n,]+/g)
+      .map((s) => s.trim())
+      .filter(Boolean);
   };
 
   const handleConfirm = () => {
@@ -128,6 +137,8 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
       max_contacts_total: maxContactsTotal,
       max_contacts_per_company: maxContactsPerCompany,
       deep_search: deepSearch,
+      seniorities: parseList(senioritiesInput),
+      departments: parseList(departmentsInput),
     });
     console.groupEnd();
   };
@@ -235,6 +246,24 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
                     />
                     Deep Search (slower, better evidence) (+1 credit per contact found)
                   </label>
+                  <div className="space-y-2 pt-2">
+                    <div className="text-xs mac-muted">Target Seniorities (optional)</div>
+                    <input
+                      value={senioritiesInput}
+                      onChange={(e) => setSenioritiesInput(e.target.value)}
+                      placeholder="e.g. VP, Director, Head, Senior Director"
+                      className="w-full mac-input px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-xs mac-muted">Target Departments (optional)</div>
+                    <input
+                      value={departmentsInput}
+                      onChange={(e) => setDepartmentsInput(e.target.value)}
+                      placeholder="e.g. Sales, Marketing, Operations"
+                      className="w-full mac-input px-3 py-2 text-sm"
+                    />
+                  </div>
                   {errors.includes('platforms') && (
                     <div className="text-xs text-[color:var(--danger)]">Select at least one platform.</div>
                   )}

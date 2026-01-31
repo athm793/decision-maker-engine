@@ -26,7 +26,7 @@ function App() {
   const [resultsQueryInput, setResultsQueryInput] = useState('');
   const [resultsQuery, setResultsQuery] = useState('');
   const [resultsOffset, setResultsOffset] = useState(0);
-  const [resultsLimit, setResultsLimit] = useState(25);
+  const [resultsLimit, setResultsLimit] = useState(50);
   const [isResultsLoading, setIsResultsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -272,6 +272,8 @@ function App() {
                 max_contacts_total: options?.max_contacts_total || 50,
                 max_contacts_per_company: options?.max_contacts_per_company || 1,
                 deep_search: Boolean(options?.deep_search),
+                seniorities: (options?.seniorities && options.seniorities.length > 0) ? options.seniorities : null,
+                departments: (options?.departments && options.departments.length > 0) ? options.departments : null,
             });
             
             setJobId(response.data.id);
@@ -280,7 +282,7 @@ function App() {
             setResultsQueryInput('');
             setResultsQuery('');
             setResultsOffset(0);
-            setResultsLimit(25);
+            setResultsLimit(50);
             setStep('processing');
             console.log('[create job] ok id=%s', response.data.id);
             console.groupEnd();

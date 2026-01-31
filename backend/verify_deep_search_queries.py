@@ -7,6 +7,7 @@ def main() -> None:
         location="New York, United States",
         selected_platforms=["linkedin", "facebook", "instagram"],
         website="https://acme.example",
+        query_keywords=None,
     )
     assert any("site:linkedin.com/in" in q for q in qs), qs
     assert any("site:facebook.com" in q for q in qs), qs
@@ -16,4 +17,3 @@ def main() -> None:
 if __name__ == "__main__":
     main()
     print("OK")
-
