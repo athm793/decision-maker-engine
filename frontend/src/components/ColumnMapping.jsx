@@ -5,9 +5,9 @@ const REQUIRED_FIELDS = [
   { key: 'company_name', label: 'Company Name', required: true },
   { key: 'google_maps_url', label: 'Google Maps URL', required: true },
   { key: 'industry', label: 'Company Type', required: true },
-  { key: 'city', label: 'Company City', required: true },
-  { key: 'country', label: 'Company Country', required: true },
-  { key: 'location', label: 'Location', required: true },
+  { key: 'city', label: 'Company City', required: false },
+  { key: 'country', label: 'Company Country', required: false },
+  { key: 'location', label: 'Address', required: true },
   { key: 'website', label: 'Company Website', required: true },
 ];
 
@@ -19,7 +19,7 @@ const PLATFORM_OPTIONS = [
   { key: 'yelp', label: 'Yelp' },
 ];
 
-export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance, error, notice }) {
+export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice }) {
   const [mappings, setMappings] = useState({});
   const [errors, setErrors] = useState([]);
   const [companyNameHint, setCompanyNameHint] = useState(null);
@@ -257,8 +257,12 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
                 </div>
 
                 <div className="text-xs mac-muted">
-                  Estimated credits: (Math.max(1, selectedPlatforms.length) + (deepSearch ? 1 : 0)) * maxContactsTotal
-                  {typeof creditsBalance === 'number' && ` • Available: ${creditsBalance}`}
+                  {(() => {
+                    const perContact = Math.max(1, selectedPlatforms.length) + (deepSearch ? 1 : 0);
+                    const maxCredits = perContact * (maxContactsTotal || 0);
+                    const fmt = new Intl.NumberFormat();
+                    return `Approx. max credits for this job: ${fmt.format(maxCredits)} (${perContact} per contact)`;
+                  })()}
                 </div>
               </div>
             </div>

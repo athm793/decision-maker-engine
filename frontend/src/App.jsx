@@ -440,7 +440,6 @@ function App() {
             previewData={previewData}
             onConfirm={handleMappingConfirm}
             onCancel={handleCancel}
-            creditsBalance={creditsBalance}
             error={error}
             notice={notice}
           />

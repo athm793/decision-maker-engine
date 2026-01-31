@@ -239,15 +239,15 @@ class ScraperService:
         self._enrich_cache[key] = out
         return out
 
-    async def search_linkedin(self, company_name: str, location: str = "") -> List[Dict[str, Any]]:
+    async def search_linkedin(self, company_name: str, location: str = "", search_limit: int = 5) -> List[Dict[str, Any]]:
         results = []
         try:
             if not self.web_search:
                 return []
 
-            titles = ["CEO", "Founder", "Owner", "President", "\"General Manager\""]
-            q = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:linkedin.com/in"
-            items = await self._cached_search(q, limit=5)
+            titles = ["CEO", "Founder", "Owner", "President", "\"General Manager\"", "\"Managing Director\"", "\"Operations Manager\""]
+            q = f"{company_name} {location} ({' OR '.join(titles)}) site:linkedin.com/in"
+            items = await self._cached_search(q, limit=search_limit or 5)
             for item in items:
                 url = item.get("url")
                 if not url or "linkedin.com/in" not in url:
@@ -279,10 +279,9 @@ class ScraperService:
         deep_search: bool = False,
     ) -> List[Dict[str, Any]]:
         if platform == "linkedin":
-            out = await self.search_linkedin(company_name, location)
+            out = await self.search_linkedin(company_name, location, search_limit=search_limit or 5)
             if deep_search and self.web_search:
                 titles = [
-                    "\"Managing Director\"",
                     "\"Managing Partner\"",
                     "\"Managing Member\"",
                     "Partner",
@@ -537,13 +536,16 @@ class ScraperService:
             )
             out: list[dict[str, Any]] = []
             seen: set[str] = set()
+            deep_platform = None
+            if deep_search:
+                deep_platform = "linkedin" if "linkedin" in selected else (selected[0] if selected else None)
             for platform in selected:
                 items = await self.search_platform(
                     platform,
                     company_name,
                     location,
                     search_limit=(search_limit or 3),
-                    deep_search=deep_search,
+                    deep_search=bool(deep_platform and platform == deep_platform),
                 )
                 for item in items:
                     url = item.get("profile_url") or ""
@@ -554,7 +556,8 @@ class ScraperService:
                     out.append(item)
                     if len(out) >= max_people:
                         return out
-            return out
+            if out:
+                return out
 
         if self.llm is not None:
             logger.info(
@@ -585,7 +588,7 @@ class ScraperService:
                 )
             return out[:max_people]
             
-        linkedin_results = await self.search_linkedin(company_name, location)
+        linkedin_results = await self.search_linkedin(company_name, location, search_limit=5)
         gmaps_results = await self.search_google_maps(company_name, location, search_limit=(search_limit or 3))
         
         return linkedin_results + gmaps_results
