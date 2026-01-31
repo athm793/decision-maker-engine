@@ -453,6 +453,9 @@ async def _process_job_task(job_id: int):
         max_contacts_total = job.max_contacts_total or 0
         max_contacts_per_company = job.max_contacts_per_company or 0
         platforms_multiplier = max(1, len(selected_platforms))
+        job_options = getattr(job, "options", None) or {}
+        deep_search = bool(job_options.get("deep_search"))
+        credits_per_contact = platforms_multiplier + (1 if deep_search else 0)
         found_total = 0
         
         company_col = mappings.get("company_name")
@@ -464,12 +467,13 @@ async def _process_job_task(job_id: int):
         country_col = mappings.get("country", "")
         
         logger.info(
-            "process_job_task.options job_id=%s selected_platforms=%s max_total=%s max_per_company=%s credits_per_contact=%s",
+            "process_job_task.options job_id=%s selected_platforms=%s max_total=%s max_per_company=%s credits_per_contact=%s deep_search=%s",
             job_id,
             selected_platforms,
             max_contacts_total,
             max_contacts_per_company,
-            platforms_multiplier,
+            credits_per_contact,
+            deep_search,
         )
 
         concurrency = int(os.getenv("JOB_CONCURRENCY", "3") or "3")
@@ -557,6 +561,7 @@ async def _process_job_task(job_id: int):
                 max_people=remaining_per_company,
                 remaining_total=remaining_total,
                 search_limit=search_limit,
+                deep_search=deep_search,
             )
 
             return {
@@ -615,7 +620,7 @@ async def _process_job_task(job_id: int):
                         db.add(credit_state)
                         db.commit()
 
-                    if credit_state.balance < platforms_multiplier:
+                    if credit_state.balance < credits_per_contact:
                         job.stop_reason = "credits_exhausted"
                         job.status = JobStatus.COMPLETED
                         db.commit()
@@ -623,11 +628,11 @@ async def _process_job_task(job_id: int):
                             "process_job_task.credits_exhausted job_id=%s balance=%s needed=%s",
                             job_id,
                             credit_state.balance,
-                            platforms_multiplier,
+                            credits_per_contact,
                         )
                         break
 
-                    credit_state.balance -= platforms_multiplier
+                    credit_state.balance -= credits_per_contact
 
                     name_out = _non_empty(res.get("name"), "Unknown")
                     title_out = _non_empty(res.get("title"), "Unknown")
@@ -650,7 +655,7 @@ async def _process_job_task(job_id: int):
                     )
                     db.add(dm)
                     job.decision_makers_found += 1
-                    job.credits_spent = (job.credits_spent or 0) + platforms_multiplier
+                    job.credits_spent = (job.credits_spent or 0) + credits_per_contact
                     found_total += 1
 
                 job.processed_companies += 1
@@ -768,6 +773,7 @@ async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: S
         max_contacts_per_company=job_in.max_contacts_per_company,
         credits_spent=0,
         stop_reason=None,
+        options={"deep_search": bool(job_in.deep_search)},
     )
     
     db.add(db_job)
@@ -920,8 +926,7 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
         [
             "Company Name",
             "Company Type",
-            "Company City",
-            "Company Country",
+            "Company Location",
             "Company Website",
             "Contact Name",
             "Contact Job Title",
@@ -935,12 +940,14 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
     for dm in rows:
         payload = _parse_uploaded_company_data(getattr(dm, "uploaded_company_data", None))
         resolved = _resolve_company_fields(dm, mappings)
+        company_location = ", ".join(
+            [p for p in [_text(resolved.get("company_city", "")), _text(resolved.get("company_country", ""))] if p]
+        )
         writer.writerow(
             [
                 _text(resolved.get("company_name", "")),
                 _text(resolved.get("company_type", "")),
-                _text(resolved.get("company_city", "")),
-                _text(resolved.get("company_country", "")),
+                company_location,
                 _text(resolved.get("company_website", "")),
                 _non_empty(getattr(dm, "name", ""), "Unknown"),
                 _non_empty(getattr(dm, "title", ""), "Unknown"),

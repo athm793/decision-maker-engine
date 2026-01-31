@@ -269,9 +269,62 @@ class ScraperService:
             
         return results
 
-    async def search_platform(self, platform: str, company_name: str, location: str = "", search_limit: int = 3) -> List[Dict[str, Any]]:
+    async def search_platform(
+        self,
+        platform: str,
+        company_name: str,
+        location: str = "",
+        search_limit: int = 3,
+        deep_search: bool = False,
+    ) -> List[Dict[str, Any]]:
         if platform == "linkedin":
-            return await self.search_linkedin(company_name, location)
+            out = await self.search_linkedin(company_name, location)
+            if deep_search and self.web_search:
+                titles = [
+                    "President",
+                    "\"General Manager\"",
+                    "\"Managing Director\"",
+                    "\"Managing Partner\"",
+                    "\"Managing Member\"",
+                    "Partner",
+                    "Principal",
+                    "CEO",
+                    "COO",
+                    "Director",
+                    "\"Operations Manager\"",
+                    "\"Vice President\"",
+                    "VP",
+                    "\"Head of\"",
+                ]
+                q2 = f"\"{company_name}\" {location} ({' OR '.join(titles)}) site:linkedin.com/in"
+                items2 = await self._cached_search(q2, limit=max(1, min(search_limit, 10)))
+                for item in items2:
+                    url = item.get("url")
+                    if not url or "linkedin.com/in" not in url:
+                        continue
+                    title = item.get("title", "")
+                    snippet = item.get("snippet", "")
+                    name = guess_person_name_from_title(title) or ""
+                    out.append(
+                        {
+                            "name": name,
+                            "title": "",
+                            "platform": "LinkedIn",
+                            "profile_url": url,
+                            "confidence": "LOW",
+                            "reasoning": snippet or title,
+                        }
+                    )
+            seen: set[str] = set()
+            deduped: list[dict[str, Any]] = []
+            for x in out:
+                u = (x.get("profile_url") or "").strip()
+                if u and u in seen:
+                    continue
+                if u:
+                    seen.add(u)
+                deduped.append(x)
+            return deduped
 
         if not self.web_search:
             return []
@@ -294,10 +347,27 @@ class ScraperService:
                         "reasoning": item.get("snippet") or item.get("title"),
                     }
                 )
+            if deep_search:
+                q2 = f"\"{company_name}\" {location} \"Google Maps\" owner"
+                items2 = await self._cached_search(q2, limit=search_limit)
+                for item in items2:
+                    url = item.get("url")
+                    if not url:
+                        continue
+                    out.append(
+                        {
+                            "name": "",
+                            "title": "",
+                            "platform": "Google Maps",
+                            "profile_url": url,
+                            "confidence": "LOW",
+                            "reasoning": item.get("snippet") or item.get("title"),
+                        }
+                    )
             return out
 
         if platform == "facebook":
-            q = f"{company_name} {location} (CEO OR founder OR owner) site:facebook.com"
+            q = f"{company_name} {location} site:facebook.com (owner OR founder OR ceo)"
             items = await self._cached_search(q, limit=search_limit)
             out: list[dict[str, Any]] = []
             for item in items:
@@ -314,6 +384,23 @@ class ScraperService:
                         "reasoning": item.get("snippet") or item.get("title"),
                     }
                 )
+            if deep_search:
+                q2 = f"\"{company_name}\" {location} site:facebook.com (about OR team OR management)"
+                items2 = await self._cached_search(q2, limit=search_limit)
+                for item in items2:
+                    url = item.get("url")
+                    if not url:
+                        continue
+                    out.append(
+                        {
+                            "name": "",
+                            "title": "",
+                            "platform": "Facebook",
+                            "profile_url": url,
+                            "confidence": "LOW",
+                            "reasoning": item.get("snippet") or item.get("title"),
+                        }
+                    )
             return out
 
         if platform == "instagram":
@@ -334,6 +421,23 @@ class ScraperService:
                         "reasoning": item.get("snippet") or item.get("title"),
                     }
                 )
+            if deep_search:
+                q2 = f"\"{company_name}\" {location} site:instagram.com (bio OR founder)"
+                items2 = await self._cached_search(q2, limit=search_limit)
+                for item in items2:
+                    url = item.get("url")
+                    if not url:
+                        continue
+                    out.append(
+                        {
+                            "name": "",
+                            "title": "",
+                            "platform": "Instagram",
+                            "profile_url": url,
+                            "confidence": "LOW",
+                            "reasoning": item.get("snippet") or item.get("title"),
+                        }
+                    )
             return out
 
         if platform == "yelp":
@@ -354,6 +458,23 @@ class ScraperService:
                         "reasoning": item.get("snippet") or item.get("title"),
                     }
                 )
+            if deep_search:
+                q2 = f"\"{company_name}\" {location} site:yelp.com \"Business owner\""
+                items2 = await self._cached_search(q2, limit=search_limit)
+                for item in items2:
+                    url = item.get("url")
+                    if not url:
+                        continue
+                    out.append(
+                        {
+                            "name": "",
+                            "title": "",
+                            "platform": "Yelp",
+                            "profile_url": url,
+                            "confidence": "LOW",
+                            "reasoning": item.get("snippet") or item.get("title"),
+                        }
+                    )
             return out
 
         return []
@@ -395,6 +516,7 @@ class ScraperService:
         max_people: int | None = None,
         remaining_total: int | None = None,
         search_limit: int | None = None,
+        deep_search: bool = False,
     ) -> List[Dict[str, Any]]:
         if not self.browser:
             await self.start()
@@ -447,7 +569,13 @@ class ScraperService:
             out: list[dict[str, Any]] = []
             seen: set[str] = set()
             for platform in selected:
-                items = await self.search_platform(platform, company_name, location, search_limit=(search_limit or 3))
+                items = await self.search_platform(
+                    platform,
+                    company_name,
+                    location,
+                    search_limit=(search_limit or 3),
+                    deep_search=deep_search,
+                )
                 for item in items:
                     url = item.get("profile_url") or ""
                     if url and url in seen:

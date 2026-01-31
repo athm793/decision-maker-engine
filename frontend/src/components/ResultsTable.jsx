@@ -115,8 +115,7 @@ export function ResultsTable({
               <tr>
                 <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Name</th>
                 <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Type</th>
-                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company City</th>
-                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Country</th>
+                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Location</th>
                 <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Website</th>
                 <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Contact Name</th>
                 <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Contact Job Title</th>
@@ -135,10 +134,7 @@ export function ResultsTable({
                     {dm.company_type || ''}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap mac-muted">
-                    {dm.company_city || ''}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap mac-muted">
-                    {dm.company_country || ''}
+                    {[dm.company_city, dm.company_country].filter(Boolean).join(', ') || ''}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {dm.company_website ? (

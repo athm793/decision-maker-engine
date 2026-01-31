@@ -17,6 +17,7 @@ class JobCreate(BaseModel):
     selected_platforms: List[str] = ["google_maps", "linkedin"]
     max_contacts_total: int = 50
     max_contacts_per_company: int = 1
+    deep_search: bool = False
 
 class JobResponse(BaseModel):
     id: int

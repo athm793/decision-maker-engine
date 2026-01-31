@@ -17,6 +17,7 @@ function App() {
   const [notice, setNotice] = useState(null);
   const [jobId, setJobId] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [jobTimerStartMs, setJobTimerStartMs] = useState(null);
   
   // Job State
   const [job, setJob] = useState(null);
@@ -270,10 +271,12 @@ function App() {
                 selected_platforms: options?.selected_platforms || [],
                 max_contacts_total: options?.max_contacts_total || 50,
                 max_contacts_per_company: options?.max_contacts_per_company || 1,
+                deep_search: Boolean(options?.deep_search),
             });
             
             setJobId(response.data.id);
             setJob(response.data);
+            setJobTimerStartMs(Date.now());
             setResultsQueryInput('');
             setResultsQuery('');
             setResultsOffset(0);
@@ -317,6 +320,7 @@ function App() {
     setPreviewData(null);
     setError(null);
     setNotice(null);
+    setJobTimerStartMs(null);
     setStep('upload');
   };
 
@@ -327,6 +331,7 @@ function App() {
     setNotice(null);
     setJobId(null);
     setJob(null);
+    setJobTimerStartMs(null);
     setResults([]);
     setResultsTotal(0);
     setResultsQueryInput('');
@@ -341,6 +346,7 @@ function App() {
     setNotice(null);
     setJobId(id);
     setJob(null);
+    setJobTimerStartMs(Date.now());
     setResults([]);
     setResultsTotal(0);
     setResultsQueryInput('');
@@ -461,7 +467,7 @@ function App() {
                           <button
                               onClick={handleStopJob}
                               disabled={isCancelling}
-                              className="mac-button-danger px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium flex items-center gap-2"
+                              className="mac-button mac-button-danger px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium flex items-center gap-2"
                           >
                               <Square className="w-4 h-4" />
                               {isCancelling ? 'Stopping…' : 'Stop Job'}
@@ -503,7 +509,7 @@ function App() {
                   </div>
                 )}
 
-                <JobProgress job={job} />
+                <JobProgress job={job} timerStartMs={jobTimerStartMs} />
                 <ResultsTable
                   results={results}
                   total={resultsTotal}

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 
-export function JobProgress({ job }) {
+export function JobProgress({ job, timerStartMs }) {
   const percentage = job.total_companies > 0 
     ? Math.round((job.processed_companies / job.total_companies) * 100) 
     : 0;
@@ -10,11 +10,11 @@ export function JobProgress({ job }) {
   const [tickMs, setTickMs] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!job?.created_at) return;
+    if (!timerStartMs) return;
     if (!['queued', 'processing'].includes(job.status)) return;
     const id = setInterval(() => setTickMs(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [job?.created_at, job?.status, job?.id]);
+  }, [timerStartMs, job?.status, job?.id]);
 
   useEffect(() => {
     if (['completed', 'failed', 'cancelled'].includes(job.status)) {
@@ -23,10 +23,8 @@ export function JobProgress({ job }) {
   }, [job?.status]);
 
   const elapsedLabel = useMemo(() => {
-    const start = new Date(job.created_at).getTime();
-    if (!Number.isFinite(start)) return '—';
-    const end = tickMs;
-    const ms = Math.max(0, end - start);
+    if (!timerStartMs) return '0:00';
+    const ms = Math.max(0, tickMs - timerStartMs);
     const totalSeconds = Math.floor(ms / 1000);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -34,7 +32,25 @@ export function JobProgress({ job }) {
     const pad2 = (n) => String(n).padStart(2, '0');
     if (hours > 0) return `${hours}:${pad2(minutes)}:${pad2(seconds)}`;
     return `${minutes}:${pad2(seconds)}`;
-  }, [job?.created_at, tickMs]);
+  }, [timerStartMs, tickMs]);
+
+  const formatPlatformName = (raw) => {
+    const v = String(raw || '').trim().toLowerCase();
+    const map = {
+      linkedin: 'LinkedIn',
+      google_maps: 'Google Maps',
+      facebook: 'Facebook',
+      instagram: 'Instagram',
+      yelp: 'Yelp',
+    };
+    return map[v] || (raw || '');
+  };
+
+  const platformsLabel = useMemo(() => {
+    const arr = Array.isArray(job.selected_platforms) ? job.selected_platforms : [];
+    if (arr.length === 0) return '—';
+    return arr.map(formatPlatformName).join(', ');
+  }, [job.selected_platforms]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -43,17 +59,6 @@ export function JobProgress({ job }) {
       case 'failed': return 'text-[color:var(--danger)]';
       case 'cancelled': return 'text-[var(--muted)]';
       default: return 'text-[var(--muted)]';
-    }
-  };
-
-  const getStatusLabel = (status) => {
-    switch (status) {
-      case 'queued': return 'Queued';
-      case 'processing': return 'Processing';
-      case 'completed': return 'Completed';
-      case 'failed': return 'Failed';
-      case 'cancelled': return 'Cancelled';
-      default: return status;
     }
   };
 
@@ -68,7 +73,7 @@ export function JobProgress({ job }) {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-6 space-y-6">
+    <div className="w-full max-w-6xl mx-auto px-6 space-y-6">
       <div className="mac-card p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -76,21 +81,16 @@ export function JobProgress({ job }) {
               <span className={getStatusColor(job.status)}>
                 {getStatusIcon(job.status)}
               </span>
-              Processing Job #{job.id}
+              <span className="text-[color:var(--accent)]">Processing Job #{job.id}</span>
             </h2>
             <p className="mac-muted text-sm mt-1">
               File: {job.filename}
             </p>
           </div>
           <div className="text-right">
-            <div className={clsx('text-xs font-medium uppercase tracking-wide', getStatusColor(job.status))}>
-              {getStatusLabel(job.status)}
-            </div>
-            <div className="text-2xl font-semibold">
-              {job.decision_makers_found}
-            </div>
-            <div className="text-xs mac-muted uppercase tracking-wide">
-              Decision Makers Found
+            <div className="text-2xl font-semibold flex items-baseline justify-end gap-2">
+              <span>{job.decision_makers_found}</span>
+              <span className="text-xs mac-muted uppercase tracking-wide">Found</span>
             </div>
           </div>
         </div>
@@ -99,7 +99,7 @@ export function JobProgress({ job }) {
           <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">
             <div className="text-xs mac-muted uppercase tracking-wide">Platforms</div>
             <div className="text-sm mt-1">
-              {(job.selected_platforms && job.selected_platforms.length > 0) ? job.selected_platforms.join(', ') : 'default'}
+              {platformsLabel}
             </div>
           </div>
           <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">

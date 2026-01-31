@@ -12,8 +12,8 @@ const REQUIRED_FIELDS = [
 ];
 
 const PLATFORM_OPTIONS = [
-  { key: 'google_maps', label: 'Google Maps' },
   { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'google_maps', label: 'Google Maps' },
   { key: 'facebook', label: 'Facebook' },
   { key: 'instagram', label: 'Instagram' },
   { key: 'yelp', label: 'Yelp' },
@@ -25,6 +25,7 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
   const [companyNameHint, setCompanyNameHint] = useState(null);
   const [websiteHint, setWebsiteHint] = useState(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState(['linkedin']);
+  const [deepSearch, setDeepSearch] = useState(false);
   const [maxContactsTotal, setMaxContactsTotal] = useState(50);
   const [maxContactsPerCompany, setMaxContactsPerCompany] = useState(1);
 
@@ -73,6 +74,7 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
     console.groupCollapsed('[Start Processing] validate + submit');
     console.log('mappings:', mappings);
     console.log('selectedPlatforms:', selectedPlatforms);
+    console.log('deepSearch:', deepSearch);
     console.log('maxContactsTotal:', maxContactsTotal);
     console.log('maxContactsPerCompany:', maxContactsPerCompany);
     const newErrors = [];
@@ -126,6 +128,7 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
       selected_platforms: selectedPlatforms,
       max_contacts_total: maxContactsTotal,
       max_contacts_per_company: maxContactsPerCompany,
+      deep_search: deepSearch,
     });
     console.groupEnd();
   };
@@ -215,6 +218,15 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
                   <div className="text-xs mac-muted">
                     Choosing more than 2 platforms will cause the job to process for significantly longer.
                   </div>
+                  <label className="flex items-center gap-2 text-sm pt-2">
+                    <input
+                      type="checkbox"
+                      checked={deepSearch}
+                      onChange={(e) => setDeepSearch(e.target.checked)}
+                      className="accent-[var(--accent)]"
+                    />
+                    Deep Search (+1 credit per contact found)
+                  </label>
                   {errors.includes('platforms') && (
                     <div className="text-xs text-[color:var(--danger)]">Select at least one platform.</div>
                   )}
@@ -245,7 +257,7 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, creditsBalance
                 </div>
 
                 <div className="text-xs mac-muted">
-                  Estimated credits: {Math.max(1, selectedPlatforms.length) * maxContactsTotal}
+                  Estimated credits: (Math.max(1, selectedPlatforms.length) + (deepSearch ? 1 : 0)) * maxContactsTotal
                   {typeof creditsBalance === 'number' && ` • Available: ${creditsBalance}`}
                 </div>
               </div>
