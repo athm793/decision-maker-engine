@@ -95,11 +95,16 @@ class OpenAICompatibleLLM:
         search_results: list[dict[str, Any]] | None = None,
         platforms: list[str] | None = None,
         max_people: int = 3,
+        use_web_search: bool = True,
+        deep_search: bool = False,
+        role_keywords_override: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        role_keywords = [str(k).strip().strip('"') for k in decision_maker_query_keywords()]
+        base_keywords = role_keywords_override if role_keywords_override else decision_maker_query_keywords()
+        role_keywords = [str(k).strip().strip('"') for k in base_keywords]
         system = (
             "You are a research assistant. Find real people who are decision makers for the given company. "
-            "Return only JSON."
+            + ("Use your built-in web search tools to verify identities and sources. " if use_web_search else "")
+            + "Return only JSON."
         )
 
         user = {
@@ -110,6 +115,7 @@ class OpenAICompatibleLLM:
             "search_results": search_results or [],
             "platforms": platforms or [],
             "max_people": max_people,
+            "deep_search": bool(deep_search),
             "output_schema": {
                 "people": [
                     {
@@ -156,10 +162,12 @@ class OpenAICompatibleLLM:
         google_maps_url: str | None = None,
         website: str | None = None,
         search_results: list[dict[str, Any]] | None = None,
+        use_web_search: bool = True,
     ) -> dict[str, Any]:
         system = (
             "You are a research assistant. Normalize the company identity from the provided row hints. "
-            "Return only JSON."
+            + ("Use your built-in web search tools to validate the company and website. " if use_web_search else "")
+            + "Return only JSON."
         )
 
         user = {

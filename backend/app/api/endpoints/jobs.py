@@ -489,7 +489,7 @@ async def _process_job_task(job_id: int):
             deep_search,
         )
 
-        concurrency = int(os.getenv("JOB_CONCURRENCY", "100") or "100")
+        concurrency = int(os.getenv("JOB_CONCURRENCY", "25") or "25")
         concurrency = max(1, min(concurrency, 500))
         search_limit = 3
         enrichment_search_limit = 5

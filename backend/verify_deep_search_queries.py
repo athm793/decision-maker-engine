@@ -1,4 +1,4 @@
-from app.services.scraper import _build_deep_search_queries
+from app.services.archive.scraper_playwright import _build_deep_search_queries
 
 
 def main() -> None:
