@@ -238,7 +238,7 @@ function App() {
               setNotice(`${duplicates} duplicate row${duplicates === 1 ? '' : 's'} were removed before processing.`);
             }
 
-            const requiredKeys = ['company_name', 'google_maps_url', 'industry', 'city', 'country', 'location', 'website'];
+            const requiredKeys = ['company_name', 'industry', 'location', 'website'];
             const missingMappings = requiredKeys.filter((k) => !mappings?.[k]);
             if (missingMappings.length > 0) {
               setError(`Missing required mappings: ${missingMappings.join(', ')}`);

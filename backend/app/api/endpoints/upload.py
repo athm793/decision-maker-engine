@@ -8,7 +8,6 @@ router = APIRouter()
 
 COLUMN_KEYWORDS = {
     "company_name": ["company", "name", "business", "organization"],
-    "google_maps_url": ["maps", "url", "link", "google"],
     "industry": ["industry", "category", "sector"],
     "city": ["city", "town"],
     "country": ["country", "nation"],
@@ -39,7 +38,7 @@ def detect_column_mapping(columns: list) -> Dict[str, str]:
             if c in {"name", "company"}:
                 s += 25
 
-        if target in {"website", "google_maps_url"}:
+        if target in {"website"}:
             if any(k in c for k in ["url", "http", "www", "link"]):
                 s += 15
         return s

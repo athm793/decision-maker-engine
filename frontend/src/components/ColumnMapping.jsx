@@ -3,7 +3,6 @@ import { ArrowRight } from 'lucide-react';
 
 const REQUIRED_FIELDS = [
   { key: 'company_name', label: 'Company Name', required: true },
-  { key: 'google_maps_url', label: 'Google Maps URL', required: true },
   { key: 'industry', label: 'Company Type', required: true },
   { key: 'city', label: 'Company City', required: false },
   { key: 'country', label: 'Company Country', required: false },
