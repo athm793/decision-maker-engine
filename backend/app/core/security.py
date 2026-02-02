@@ -59,9 +59,25 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+    user_meta = claims.get("user_metadata") or {}
+    if not isinstance(user_meta, dict):
+        user_meta = {}
+    first_name = str(user_meta.get("first_name") or "").strip()
+    last_name = str(user_meta.get("last_name") or "").strip()
+    company_name = str(user_meta.get("company_name") or user_meta.get("company") or "").strip()
+    work_email = str(user_meta.get("work_email") or "").strip() or email
+
     profile = db.query(Profile).filter(Profile.id == user_id).first()
     if profile is None:
-        profile = Profile(id=user_id, email=email, role="user")
+        profile = Profile(
+            id=user_id,
+            email=email,
+            work_email=work_email,
+            first_name=first_name,
+            last_name=last_name,
+            company_name=company_name,
+            role="user",
+        )
         db.add(profile)
         db.commit()
         db.refresh(profile)
@@ -69,6 +85,18 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
         changed = False
         if email and (profile.email or "") != email:
             profile.email = email
+            changed = True
+        if work_email and (getattr(profile, "work_email", "") or "") != work_email:
+            profile.work_email = work_email
+            changed = True
+        if first_name and (getattr(profile, "first_name", "") or "") != first_name:
+            profile.first_name = first_name
+            changed = True
+        if last_name and (getattr(profile, "last_name", "") or "") != last_name:
+            profile.last_name = last_name
+            changed = True
+        if company_name and (getattr(profile, "company_name", "") or "") != company_name:
+            profile.company_name = company_name
             changed = True
         if changed:
             db.commit()

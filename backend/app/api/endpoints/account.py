@@ -30,6 +30,10 @@ class MeResponse(BaseModel):
     id: str
     email: str
     role: str
+    work_email: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    company_name: str | None = None
     credits_balance: int
     subscription: SubscriptionOut | None = None
 
@@ -42,6 +46,7 @@ class RedeemCouponRequest(BaseModel):
 async def me(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     balance = recalculate_effective_balance(db, current_user.id)
     sub = db.query(Subscription).filter(Subscription.user_id == current_user.id).first()
+    profile = db.query(Profile).filter(Profile.id == current_user.id).first()
     sub_out = None
     if sub is not None:
         sub_out = SubscriptionOut(
@@ -53,6 +58,10 @@ async def me(db: Session = Depends(get_db), current_user: CurrentUser = Depends(
         id=current_user.id,
         email=current_user.email,
         role=current_user.role,
+        work_email=(getattr(profile, "work_email", None) if profile else None),
+        first_name=(getattr(profile, "first_name", None) if profile else None),
+        last_name=(getattr(profile, "last_name", None) if profile else None),
+        company_name=(getattr(profile, "company_name", None) if profile else None),
         credits_balance=int(balance),
         subscription=sub_out,
     )
@@ -128,4 +137,3 @@ async def redeem_coupon(
     assignment.redeemed_at = now
     db.commit()
     return {"ok": True, "credits_granted": credits}
-

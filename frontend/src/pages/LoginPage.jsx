@@ -7,12 +7,16 @@ import logoUrl from '../assets/logo.svg';
 export function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
+  const [workEmail, setWorkEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState('login');
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
   const [authStatus, setAuthStatus] = useState({ ready: false, configured: false, source: 'unknown' });
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [companyName, setCompanyName] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -35,7 +39,20 @@ export function LoginPage() {
       const supabase = await getSupabaseClient();
       if (!supabase) throw new Error('Auth is not configured');
       if (mode === 'signup') {
-        const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+        const signupEmail = (workEmail || '').trim();
+        if (!signupEmail) throw new Error('Work email is required');
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: signupEmail,
+          password,
+          options: {
+            data: {
+              first_name: (firstName || '').trim(),
+              last_name: (lastName || '').trim(),
+              company_name: (companyName || '').trim(),
+              work_email: signupEmail,
+            },
+          },
+        });
         if (signUpError) throw signUpError;
         if (data?.session) {
           navigate('/');
@@ -44,7 +61,9 @@ export function LoginPage() {
           setMode('login');
         }
       } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        const loginEmail = (email || '').trim();
+        if (!loginEmail) throw new Error('Email is required');
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
         if (signInError) throw signInError;
         navigate('/');
       }
@@ -80,6 +99,52 @@ export function LoginPage() {
         )}
 
         <form className="pt-6 space-y-3" onSubmit={handleSubmit}>
+          {mode === 'signup' && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="First name"
+                  className="w-full mac-input px-3 py-2 text-sm"
+                  required
+                  autoComplete="given-name"
+                  disabled={isBusy || !authStatus.ready || !authStatus.configured}
+                />
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Last name"
+                  className="w-full mac-input px-3 py-2 text-sm"
+                  required
+                  autoComplete="family-name"
+                  disabled={isBusy || !authStatus.ready || !authStatus.configured}
+                />
+              </div>
+              <input
+                type="text"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="Company name"
+                className="w-full mac-input px-3 py-2 text-sm"
+                required
+                autoComplete="organization"
+                disabled={isBusy || !authStatus.ready || !authStatus.configured}
+              />
+              <input
+                type="email"
+                value={workEmail}
+                onChange={(e) => setWorkEmail(e.target.value)}
+                placeholder="Work email"
+                className="w-full mac-input px-3 py-2 text-sm"
+                required
+                autoComplete="email"
+                disabled={isBusy || !authStatus.ready || !authStatus.configured}
+              />
+            </>
+          )}
           <input
             type="email"
             value={email}
@@ -88,7 +153,7 @@ export function LoginPage() {
             className="w-full mac-input px-3 py-2 text-sm"
             required
             autoComplete="email"
-            disabled={isBusy || !authStatus.ready || !authStatus.configured}
+            disabled={isBusy || !authStatus.ready || !authStatus.configured || mode === 'signup'}
           />
           <input
             type="password"

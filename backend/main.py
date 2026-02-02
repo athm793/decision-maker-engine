@@ -111,6 +111,23 @@ def startup() -> None:
                 for col, col_type in missing:
                     conn.execute(text(f"ALTER TABLE decision_makers ADD COLUMN {col} {col_type}"))
 
+    if "profiles" in inspector.get_table_names():
+        existing = {c["name"] for c in inspector.get_columns("profiles")}
+        missing: list[tuple[str, str]] = []
+        if "work_email" not in existing:
+            missing.append(("work_email", "TEXT"))
+        if "first_name" not in existing:
+            missing.append(("first_name", "TEXT"))
+        if "last_name" not in existing:
+            missing.append(("last_name", "TEXT"))
+        if "company_name" not in existing:
+            missing.append(("company_name", "TEXT"))
+
+        if missing:
+            with engine.begin() as conn:
+                for col, col_type in missing:
+                    conn.execute(text(f"ALTER TABLE profiles ADD COLUMN {col} {col_type}"))
+
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
     if request.url.path == "/health":

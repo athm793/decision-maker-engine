@@ -103,6 +103,10 @@ async def admin_list_users(limit: int = 50, offset: int = 0, db: Session = Depen
             {
                 "id": p.id,
                 "email": p.email or "",
+                "work_email": getattr(p, "work_email", "") or "",
+                "first_name": getattr(p, "first_name", "") or "",
+                "last_name": getattr(p, "last_name", "") or "",
+                "company_name": getattr(p, "company_name", "") or "",
                 "role": p.role or "user",
                 "credits_balance": int(balance),
                 "subscription_plan": subs_map.get(str(p.id), "free"),

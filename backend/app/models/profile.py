@@ -9,6 +9,9 @@ class Profile(Base):
 
     id = Column(String, primary_key=True, index=True)
     email = Column(String, index=True)
+    work_email = Column(String, index=True)
+    first_name = Column(String)
+    last_name = Column(String)
+    company_name = Column(String)
     role = Column(String, default="user")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
