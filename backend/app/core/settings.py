@@ -22,6 +22,7 @@ class Settings:
         self.database_url = _getenv("DATABASE_URL", "sqlite:///./sql_app.db") or "sqlite:///./sql_app.db"
         self.db_auto_create = _getenv_bool("DB_AUTO_CREATE", default=True)
         self.supabase_url = _getenv("SUPABASE_URL")
+        self.supabase_anon_key = _getenv("SUPABASE_ANON_KEY")
         self.supabase_jwt_audience = _getenv("SUPABASE_JWT_AUD", "authenticated")
         self.supabase_jwt_issuer = _getenv("SUPABASE_JWT_ISSUER")
         self.basic_auth_enabled = _getenv_bool(

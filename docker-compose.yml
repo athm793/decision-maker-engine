@@ -17,6 +17,7 @@ services:
       DATABASE_URL: sqlite:////data/sql_app.db
       CORS_ALLOW_ORIGINS: "*"
       SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_JWT_AUD: ${SUPABASE_JWT_AUD:-authenticated}
       SUPABASE_JWT_ISSUER: ${SUPABASE_JWT_ISSUER:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

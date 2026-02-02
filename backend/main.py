@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from app.api.endpoints import upload, jobs, billing, account, admin
+from app.api.endpoints import upload, jobs, billing, account, admin, public
 from app.core.database import engine, Base
 from app.core.auth import enforce_basic_auth_for_request
 from app.core.settings import settings
@@ -140,6 +140,7 @@ app.include_router(jobs.router, prefix="/api", tags=["jobs"])
 app.include_router(billing.router, prefix="/api", tags=["billing"])
 app.include_router(account.router, prefix="/api", tags=["account"])
 app.include_router(admin.router, prefix="/api", tags=["admin"])
+app.include_router(public.router, prefix="/api", tags=["public"])
 
 @app.get("/health")
 async def health_check():

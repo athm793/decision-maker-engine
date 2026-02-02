@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { isSupabaseConfigured, supabase } from '../supabaseClient';
+import { getSupabaseClient } from '../supabaseClient';
 
 const AuthContext = createContext(null);
 
@@ -18,39 +18,47 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) {
-      applyAxiosAuth(null);
-      setSession(null);
-      setIsReady(true);
-      return;
-    }
     let isMounted = true;
     const failSafe = setTimeout(() => {
       if (!isMounted) return;
       setIsReady(true);
     }, 6000);
 
-    supabase.auth.getSession().then(({ data }) => {
+    let subscription = null;
+    (async () => {
+      const supabase = await getSupabaseClient();
       if (!isMounted) return;
-      const nextSession = data.session || null;
-      applyAxiosAuth(nextSession);
-      setSession(nextSession);
-      setIsReady(true);
-      clearTimeout(failSafe);
-    });
+      if (!supabase) {
+        applyAxiosAuth(null);
+        setSession(null);
+        setIsReady(true);
+        clearTimeout(failSafe);
+        return;
+      }
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      const normalized = nextSession || null;
-      applyAxiosAuth(normalized);
-      setSession(normalized);
-      setIsReady(true);
-      clearTimeout(failSafe);
-    });
+      supabase.auth.getSession().then(({ data }) => {
+        if (!isMounted) return;
+        const nextSession = data.session || null;
+        applyAxiosAuth(nextSession);
+        setSession(nextSession);
+        setIsReady(true);
+        clearTimeout(failSafe);
+      });
+
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+        const normalized = nextSession || null;
+        applyAxiosAuth(normalized);
+        setSession(normalized);
+        setIsReady(true);
+        clearTimeout(failSafe);
+      });
+      subscription = sub?.subscription || null;
+    })();
 
     return () => {
       isMounted = false;
       clearTimeout(failSafe);
-      sub?.subscription?.unsubscribe?.();
+      subscription?.unsubscribe?.();
     };
   }, []);
 
@@ -60,6 +68,7 @@ export function AuthProvider({ children }) {
       user: session?.user || null,
       isReady,
       signOut: async () => {
+        const supabase = await getSupabaseClient();
         if (!supabase) return;
         await supabase.auth.signOut();
       },

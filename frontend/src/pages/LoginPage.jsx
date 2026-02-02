@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
-import { isSupabaseConfigured, supabase } from '../supabaseClient';
+import { getSupabaseClient, loadSupabaseConfig } from '../supabaseClient';
 import logoUrl from '../assets/logo.svg';
 
 export function LoginPage() {
@@ -12,6 +12,19 @@ export function LoginPage() {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [authStatus, setAuthStatus] = useState({ ready: false, configured: false, source: 'unknown' });
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const cfg = await loadSupabaseConfig();
+      if (!mounted) return;
+      setAuthStatus({ ready: true, configured: !!(cfg.url && cfg.anonKey), source: cfg.source || 'unknown' });
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -19,6 +32,8 @@ export function LoginPage() {
     setNotice(null);
     setIsBusy(true);
     try {
+      const supabase = await getSupabaseClient();
+      if (!supabase) throw new Error('Auth is not configured');
       if (mode === 'signup') {
         const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
         if (signUpError) throw signUpError;
@@ -53,12 +68,12 @@ export function LoginPage() {
           {mode === 'signup' ? 'Create your account' : 'Sign in to continue'}
         </div>
 
-        {!isSupabaseConfigured && (
+        {authStatus.ready && !authStatus.configured && (
           <div className="pt-6 space-y-3">
             <div className="mac-panel p-4 text-sm">
               <div className="font-semibold">Auth is not configured</div>
               <div className="pt-1 mac-muted">
-                Set <span className="font-mono">VITE_SUPABASE_URL</span> and <span className="font-mono">VITE_SUPABASE_ANON_KEY</span> in the frontend build environment.
+                Set <span className="font-mono">VITE_SUPABASE_URL</span> and <span className="font-mono">VITE_SUPABASE_ANON_KEY</span> at build time, or set backend <span className="font-mono">SUPABASE_URL</span> and <span className="font-mono">SUPABASE_ANON_KEY</span>.
               </div>
             </div>
           </div>
@@ -73,7 +88,7 @@ export function LoginPage() {
             className="w-full mac-input px-3 py-2 text-sm"
             required
             autoComplete="email"
-            disabled={!isSupabaseConfigured || isBusy}
+            disabled={isBusy || !authStatus.ready || !authStatus.configured}
           />
           <input
             type="password"
@@ -83,13 +98,13 @@ export function LoginPage() {
             className="w-full mac-input px-3 py-2 text-sm"
             required
             autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-            disabled={!isSupabaseConfigured || isBusy}
+            disabled={isBusy || !authStatus.ready || !authStatus.configured}
           />
           {notice && <div className="text-sm mac-muted">{notice}</div>}
           {error && <div className="text-sm text-[color:var(--danger)]">{error}</div>}
           <button
             type="submit"
-            disabled={isBusy || !isSupabaseConfigured}
+            disabled={isBusy || !authStatus.ready || !authStatus.configured}
             className="w-full mac-btn mac-btn-primary px-4 py-2 text-sm"
           >
             {isBusy ? 'Please wait…' : (mode === 'signup' ? 'Create account' : 'Sign in')}
