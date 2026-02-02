@@ -5,6 +5,11 @@ WORKDIR /app/frontend
 # Ensure we install dev dependencies
 ENV NODE_ENV=development
 
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+ENV VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+
 # Copy all frontend files first to ensure context is complete
 COPY frontend/ ./
 
