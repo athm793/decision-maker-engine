@@ -389,9 +389,11 @@ class OpenAICompatibleLLM:
                     role_kw = [str(x) for x in sg.get("role_keywords") if str(x).strip()]
                 titles = [str(x).strip().strip('"') for x in role_kw if str(x).strip()]
                 titles = titles[:5]
-                titles_quoted = [f"\"{t.replace('\"', '').strip()}\"" for t in titles if t.replace('\"', '').strip()]
+                titles_clean = [t.replace('"', "").strip() for t in titles]
+                titles_quoted = [f"\"{t}\"" for t in titles_clean if t]
                 roles_expr = " OR ".join(titles_quoted)
-                base_q = f"(\"{company.replace('\"', '').strip()}\") AND ({roles_expr})".strip()
+                company_clean = company.replace('"', "").strip()
+                base_q = f"(\"{company_clean}\") AND ({roles_expr})".strip()
                 queries = [{"q": base_q}]
                 loc = str(user_payload.get("location") or "").strip()
                 web = str(user_payload.get("website") or "").strip()
