@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { isSupabaseConfigured, supabase } from '../supabaseClient';
 import logoUrl from '../assets/logo.svg';
 
 export function LoginPage() {
@@ -53,6 +53,17 @@ export function LoginPage() {
           {mode === 'signup' ? 'Create your account' : 'Sign in to continue'}
         </div>
 
+        {!isSupabaseConfigured && (
+          <div className="pt-6 space-y-3">
+            <div className="mac-panel p-4 text-sm">
+              <div className="font-semibold">Auth is not configured</div>
+              <div className="pt-1 mac-muted">
+                Set <span className="font-mono">VITE_SUPABASE_URL</span> and <span className="font-mono">VITE_SUPABASE_ANON_KEY</span> in the frontend build environment.
+              </div>
+            </div>
+          </div>
+        )}
+
         <form className="pt-6 space-y-3" onSubmit={handleSubmit}>
           <input
             type="email"
@@ -62,6 +73,7 @@ export function LoginPage() {
             className="w-full mac-input px-3 py-2 text-sm"
             required
             autoComplete="email"
+            disabled={!isSupabaseConfigured || isBusy}
           />
           <input
             type="password"
@@ -71,12 +83,13 @@ export function LoginPage() {
             className="w-full mac-input px-3 py-2 text-sm"
             required
             autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            disabled={!isSupabaseConfigured || isBusy}
           />
           {notice && <div className="text-sm mac-muted">{notice}</div>}
           {error && <div className="text-sm text-[color:var(--danger)]">{error}</div>}
           <button
             type="submit"
-            disabled={isBusy}
+            disabled={isBusy || !isSupabaseConfigured}
             className="w-full mac-btn mac-btn-primary px-4 py-2 text-sm"
           >
             {isBusy ? 'Please wait…' : (mode === 'signup' ? 'Create account' : 'Sign in')}

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { supabase } from '../supabaseClient';
+import { isSupabaseConfigured, supabase } from '../supabaseClient';
 
 const AuthContext = createContext(null);
 
@@ -18,6 +18,12 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      applyAxiosAuth(null);
+      setSession(null);
+      setIsReady(true);
+      return;
+    }
     let isMounted = true;
     const failSafe = setTimeout(() => {
       if (!isMounted) return;
@@ -54,6 +60,7 @@ export function AuthProvider({ children }) {
       user: session?.user || null,
       isReady,
       signOut: async () => {
+        if (!supabase) return;
         await supabase.auth.signOut();
       },
     };
