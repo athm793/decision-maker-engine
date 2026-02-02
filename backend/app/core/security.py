@@ -32,17 +32,22 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
     issuer = settings.supabase_jwt_issuer or f"{supabase_url}/auth/v1"
     audience = settings.supabase_jwt_audience or "authenticated"
 
-    jwks_client = jwt.PyJWKClient(jwks_url)
-    signing_key = jwks_client.get_signing_key_from_jwt(token).key
-    payload = jwt.decode(
-        token,
-        signing_key,
-        algorithms=["ES256", "RS256"],
-        audience=audience,
-        issuer=issuer,
-        options={"require": ["exp", "sub"]},
-    )
-    return dict(payload)
+    try:
+        jwks_client = jwt.PyJWKClient(jwks_url)
+        signing_key = jwks_client.get_signing_key_from_jwt(token).key
+        payload = jwt.decode(
+            token,
+            signing_key,
+            algorithms=["ES256", "RS256"],
+            audience=audience,
+            issuer=issuer,
+            options={"require": ["exp", "sub"]},
+        )
+        return dict(payload)
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> CurrentUser:
