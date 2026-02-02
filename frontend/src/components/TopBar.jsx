@@ -57,11 +57,11 @@ export function TopBar({
         <div className="fixed inset-0 z-30">
           <button
             type="button"
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 mac-overlay"
             onClick={() => setIsOpen(false)}
             aria-label="Close menu overlay"
           />
-          <div className="absolute right-4 top-4 w-[320px] max-w-[calc(100vw-2rem)] mac-panel p-4">
+          <div className="absolute right-4 top-4 w-[320px] max-w-[calc(100vw-2rem)] mac-panel mac-appear origin-top-right p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold">{menuTitle || 'Menu'}</div>
               <button

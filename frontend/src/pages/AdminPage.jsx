@@ -521,11 +521,11 @@ export function AdminPage() {
       <main className="max-w-6xl mx-auto px-5 sm:px-6 lg:px-8 py-10 space-y-6">
         {cellModal && (
           <div
-            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 mac-overlay flex items-center justify-center p-4"
             onClick={() => setCellModal(null)}
           >
             <div
-              className="mac-card w-full max-w-4xl p-4 space-y-3"
+              className="mac-card mac-appear w-full max-w-4xl p-4 space-y-3"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between gap-3">

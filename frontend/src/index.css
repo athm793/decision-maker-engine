@@ -13,22 +13,22 @@
   -moz-osx-font-smoothing: grayscale;
 
   color-scheme: dark;
-  --bg: #07070b;
-  --surface: rgba(18, 18, 28, 0.88);
-  --surface2: rgba(26, 26, 40, 0.72);
-  --border: rgba(255, 255, 255, 0.10);
+  --bg: #07070a;
+  --surface: rgba(255, 255, 255, 0.035);
+  --surface2: rgba(255, 255, 255, 0.055);
+  --border: rgba(255, 255, 255, 0.09);
   --text: rgba(255, 255, 255, 0.92);
-  --muted: rgba(255, 255, 255, 0.64);
-  --accent: #7c3aed;
-  --accent2: #00e5ff;
-  --accent-weak: rgba(124, 58, 237, 0.22);
+  --muted: rgba(255, 255, 255, 0.62);
+  --accent: #c8ad6b;
+  --accent2: #8ab4ff;
+  --accent-weak: rgba(200, 173, 107, 0.18);
   --warning: #fbbf24;
   --warning-weak: rgba(251, 191, 36, 0.18);
   --danger: #fb7185;
   --danger-weak: rgba(251, 113, 133, 0.18);
   --shadow: rgba(0, 0, 0, 0.55);
-  --ring: rgba(124, 58, 237, 0.40);
-  --ring2: rgba(0, 229, 255, 0.22);
+  --ring: rgba(200, 173, 107, 0.28);
+  --ring2: rgba(138, 180, 255, 0.20);
 }
 
 html.dark {
@@ -41,16 +41,21 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    radial-gradient(1200px 700px at 20% -10%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 60%),
-    radial-gradient(900px 600px at 95% 0%, color-mix(in srgb, var(--accent2) 22%, transparent), transparent 55%),
-    radial-gradient(900px 700px at 40% 120%, rgba(255, 255, 255, 0.05), transparent 55%),
+    radial-gradient(1200px 700px at 50% -20%, rgba(255, 255, 255, 0.07), transparent 58%),
+    radial-gradient(900px 600px at 18% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 62%),
+    radial-gradient(900px 700px at 90% 10%, color-mix(in srgb, var(--accent2) 10%, transparent), transparent 64%),
     var(--bg);
   color: var(--text);
 }
 
 @keyframes macFadeUp {
-  from { opacity: 0; transform: translateY(10px) scale(0.985); filter: blur(2px); }
-  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes macFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes macSheen {
@@ -60,11 +65,11 @@ body {
 
 @layer components {
   .mac-card {
-    background: color-mix(in srgb, var(--surface) 92%, rgba(255, 255, 255, 0.02));
-    border: 1px solid color-mix(in srgb, var(--border) 70%, rgba(124, 58, 237, 0.18));
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 18px;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 44px var(--shadow);
-    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 16px 40px var(--shadow);
+    transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms ease, background-color 180ms ease;
   }
 
   html.dark .mac-card {
@@ -72,12 +77,12 @@ body {
   }
 
   .mac-panel {
-    background: color-mix(in srgb, var(--surface2) 78%, rgba(255, 255, 255, 0.06));
-    border: 1px solid color-mix(in srgb, var(--border) 70%, rgba(0, 229, 255, 0.14));
+    background: var(--surface2);
+    border: 1px solid var(--border);
     border-radius: 20px;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 22px 56px var(--shadow);
-    backdrop-filter: blur(14px) saturate(130%);
-    -webkit-backdrop-filter: blur(14px) saturate(130%);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 48px var(--shadow);
+    backdrop-filter: blur(12px) saturate(120%);
+    -webkit-backdrop-filter: blur(12px) saturate(120%);
   }
 
   .mac-button {
@@ -114,16 +119,16 @@ body {
   }
 
   .mac-btn {
-    background: color-mix(in srgb, var(--surface2) 78%, rgba(255, 255, 255, 0.04));
-    border: 1px solid color-mix(in srgb, var(--border) 80%, rgba(255, 255, 255, 0.08));
+    background: var(--surface2);
+    border: 1px solid var(--border);
     border-radius: 12px;
     color: var(--text);
-    transition: background-color 150ms ease, transform 80ms ease, opacity 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+    transition: background-color 180ms ease, transform 120ms cubic-bezier(0.16, 1, 0.3, 1), opacity 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
   }
 
   .mac-btn:hover {
-    background: color-mix(in srgb, var(--surface2) 70%, rgba(255, 255, 255, 0.08));
-    border-color: color-mix(in srgb, var(--border) 55%, rgba(0, 229, 255, 0.18));
+    background: color-mix(in srgb, var(--surface2) 85%, rgba(255, 255, 255, 0.08));
+    border-color: color-mix(in srgb, var(--border) 60%, rgba(255, 255, 255, 0.14));
   }
 
   .mac-btn:active {
@@ -131,10 +136,10 @@ body {
   }
 
   .mac-btn-primary {
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    border: 1px solid color-mix(in srgb, var(--accent2) 40%, transparent);
-    color: white;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 14px 44px rgba(124, 58, 237, 0.22);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 92%, rgba(255, 255, 255, 0.14)), var(--accent2));
+    border: 1px solid color-mix(in srgb, var(--accent2) 55%, transparent);
+    color: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 14px 36px rgba(138, 180, 255, 0.16);
   }
 
   .mac-btn-primary:hover {
@@ -142,7 +147,7 @@ body {
   }
 
   .mac-link {
-    color: color-mix(in srgb, var(--accent2) 72%, var(--text));
+    color: color-mix(in srgb, var(--accent2) 70%, var(--text));
     text-decoration: none;
     transition: color 150ms ease, opacity 150ms ease, text-decoration-color 150ms ease;
   }
@@ -154,54 +159,61 @@ body {
   }
 
   .mac-badge {
-    border: 1px solid color-mix(in srgb, var(--accent2) 30%, transparent);
-    background: color-mix(in srgb, var(--surface2) 80%, rgba(0, 229, 255, 0.12));
-    color: color-mix(in srgb, var(--accent2) 80%, white);
+    border: 1px solid color-mix(in srgb, var(--border) 70%, rgba(255, 255, 255, 0.14));
+    background: color-mix(in srgb, var(--surface2) 88%, rgba(255, 255, 255, 0.06));
+    color: color-mix(in srgb, var(--text) 86%, rgba(255, 255, 255, 0.96));
     border-radius: 999px;
     padding: 2px 8px;
   }
 
   .mac-logo {
     background: linear-gradient(135deg, var(--accent), var(--accent2));
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 18px 60px rgba(124, 58, 237, 0.25);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 18px 60px rgba(0, 0, 0, 0.55);
   }
 
   .mac-appear {
-    animation: macFadeUp 280ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+    animation: macFadeUp 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   .mac-hover-lift:hover {
     transform: translateY(-2px);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 26px 66px var(--shadow);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 26px 66px var(--shadow);
   }
 
   .mac-sheen {
     background-image: linear-gradient(
       90deg,
-      color-mix(in srgb, var(--accent) 20%, transparent),
-      color-mix(in srgb, var(--accent2) 18%, transparent),
-      color-mix(in srgb, var(--accent) 20%, transparent)
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      color-mix(in srgb, var(--accent2) 12%, transparent),
+      color-mix(in srgb, var(--accent) 14%, transparent)
     );
     background-size: 200% 200%;
-    animation: macSheen 1800ms ease-in-out infinite alternate;
+    animation: macSheen 2400ms ease-in-out infinite alternate;
   }
 
   .mac-input {
-    background: color-mix(in srgb, var(--surface2) 70%, rgba(0, 0, 0, 0.22));
-    border: 1px solid color-mix(in srgb, var(--border) 80%, rgba(255, 255, 255, 0.10));
+    background: color-mix(in srgb, var(--surface2) 92%, rgba(0, 0, 0, 0.18));
+    border: 1px solid color-mix(in srgb, var(--border) 80%, rgba(255, 255, 255, 0.12));
     border-radius: 12px;
     color: var(--text);
     outline: none;
-    transition: box-shadow 150ms ease, border-color 150ms ease;
+    transition: box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease;
   }
 
   .mac-input:focus {
-    border-color: color-mix(in srgb, var(--accent2) 55%, transparent);
-    box-shadow: 0 0 0 3px var(--ring2), 0 0 0 1px var(--ring);
+    border-color: color-mix(in srgb, var(--accent2) 60%, transparent);
+    box-shadow: 0 0 0 4px var(--ring2), 0 0 0 1px var(--ring);
   }
 
   .mac-muted {
     color: var(--muted);
+  }
+
+  .mac-overlay {
+    background: rgba(0, 0, 0, 0.52);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: macFade 180ms ease both;
   }
 }
 

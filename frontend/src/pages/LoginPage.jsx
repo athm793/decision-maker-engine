@@ -79,7 +79,7 @@ export function LoginPage() {
       <Link to="/" className="fixed top-4 left-4 z-20 flex items-center gap-2" aria-label="Home" title="Home">
         <img src={logoUrl} alt="" className="w-9 h-9 rounded-xl" />
       </Link>
-      <div className="w-full max-w-md mac-panel p-6">
+      <div className="w-full max-w-md mac-panel mac-appear p-6">
         <div className="flex items-center justify-between">
           <div className="text-lg font-semibold">localcontacts.biz</div>
         </div>
@@ -145,16 +145,18 @@ export function LoginPage() {
               />
             </>
           )}
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            className="w-full mac-input px-3 py-2 text-sm"
-            required
-            autoComplete="email"
-            disabled={isBusy || !authStatus.ready || !authStatus.configured || mode === 'signup'}
-          />
+          {mode === 'login' && (
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              className="w-full mac-input px-3 py-2 text-sm"
+              required
+              autoComplete="email"
+              disabled={isBusy || !authStatus.ready || !authStatus.configured}
+            />
+          )}
           <input
             type="password"
             value={password}
