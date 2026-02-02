@@ -7,6 +7,7 @@ from app.core.database import engine, Base
 from app.core.auth import enforce_basic_auth_for_request
 from app.core.settings import settings
 import os
+from pathlib import Path
 from sqlalchemy import inspect, text
 import sys
 import asyncio
@@ -149,11 +150,12 @@ async def health_check():
 # In Docker, we run from /app, so frontend/dist is at /app/frontend/dist
 # But uvicorn is running backend.main:app, so CWD might be /app
 
-frontend_dist_path = os.path.join(os.getcwd(), "frontend", "dist")
+project_root = Path(__file__).resolve().parent.parent
+frontend_dist_path = project_root / "frontend" / "dist"
 
-if os.path.exists(frontend_dist_path):
+if frontend_dist_path.exists():
     # Mount assets
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist_path, "assets")), name="assets")
+    app.mount("/assets", StaticFiles(directory=str(frontend_dist_path / "assets")), name="assets")
     
     # Catch-all for SPA
     @app.get("/{full_path:path}")
@@ -163,12 +165,12 @@ if os.path.exists(frontend_dist_path):
              return {"message": "API route not found"}
 
         # Check if specific file exists (e.g. favicon.ico)
-        file_path = os.path.join(frontend_dist_path, full_path)
-        if os.path.exists(file_path) and os.path.isfile(file_path):
+        file_path = frontend_dist_path / full_path
+        if file_path.exists() and file_path.is_file():
             return FileResponse(file_path)
             
         # Return index.html for everything else
-        return FileResponse(os.path.join(frontend_dist_path, "index.html"))
+        return FileResponse(frontend_dist_path / "index.html")
 
 else:
     # Fallback for local development (without dist)
