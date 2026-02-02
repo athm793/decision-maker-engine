@@ -1,6 +1,4 @@
-Company Name,Location,Industry,Website
-Acme Corp,New York NY,Technology,www.acme.com
-Global Tech Solutions,San Francisco CA,Software,www.globaltech.com
-Summit Marketing,Chicago IL,Marketing,www.summitmarketing.com
-Apex Innovations,Austin TX,Manufacturing,www.apexinnovations.com
-River Valley Logistics,Denver CO,Logistics,www.rivervalleylogistics.com
+company,location,website
+OpenAI,San Francisco,https://openai.com
+Shopify,Ottawa,https://shopify.com
+Zoho,Chennai,https://zoho.com

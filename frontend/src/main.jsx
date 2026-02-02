@@ -1,17 +1,23 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+import axios from 'axios'
 import './index.css'
-import App from './App.jsx'
+import { AuthProvider } from './auth/AuthProvider.jsx'
+import { AppRoutes } from './AppRoutes.jsx'
+import { AppHistoryProvider } from './navigation/AppHistoryProvider.jsx'
 
-const savedTheme = localStorage.getItem('theme')
-const preferredTheme =
-  savedTheme === 'light' || savedTheme === 'dark'
-    ? savedTheme
-    : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-document.documentElement.classList.toggle('dark', preferredTheme === 'dark')
+document.documentElement.classList.add('dark')
+axios.defaults.timeout = 15000
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <AuthProvider>
+        <AppHistoryProvider>
+          <AppRoutes />
+        </AppHistoryProvider>
+      </AuthProvider>
+    </BrowserRouter>
   </StrictMode>,
 )

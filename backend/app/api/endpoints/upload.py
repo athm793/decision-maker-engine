@@ -1,10 +1,11 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from app.schemas.upload import FilePreviewResponse
-import pandas as pd
+from app.core.security import get_current_user
 import io
+import csv
 from typing import Dict
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 COLUMN_KEYWORDS = {
     "company_name": ["company", "name", "business", "organization"],
@@ -60,6 +61,30 @@ def detect_column_mapping(columns: list) -> Dict[str, str]:
 
     return mapping
 
+
+def _decode_csv_bytes(content: bytes) -> str:
+    try:
+        return content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return content.decode("latin-1")
+
+
+def _build_preview(text: str) -> tuple[list[str], int, list[dict[str, str]]]:
+    reader = csv.DictReader(io.StringIO(text))
+    columns = [str(c).strip() for c in (reader.fieldnames or []) if str(c).strip()]
+    if not columns:
+        raise HTTPException(status_code=400, detail="The CSV file has no header row")
+
+    preview_rows: list[dict[str, str]] = []
+    total_rows = 0
+    for row in reader:
+        total_rows += 1
+        if len(preview_rows) < 5:
+            preview_rows.append({col: str(row.get(col) or "").strip() for col in columns})
+
+    return columns, total_rows, preview_rows
+
+
 @router.post("/upload/preview", response_model=FilePreviewResponse)
 async def upload_preview(file: UploadFile = File(...)):
     if not file.filename.endswith(('.csv', '.CSV')):
@@ -67,18 +92,11 @@ async def upload_preview(file: UploadFile = File(...)):
     
     try:
         content = await file.read()
-        # Try UTF-8 first, then Latin-1
-        try:
-            df = pd.read_csv(io.BytesIO(content), encoding='utf-8')
-        except UnicodeDecodeError:
-            df = pd.read_csv(io.BytesIO(content), encoding='latin-1')
-            
-        if df.empty:
+        if not content:
             raise HTTPException(status_code=400, detail="The CSV file is empty")
-            
-        columns = df.columns.tolist()
-        total_rows = len(df)
-        preview_rows = df.head(5).fillna("").to_dict(orient='records')
+
+        text = _decode_csv_bytes(content)
+        columns, total_rows, preview_rows = _build_preview(text)
         suggested_mappings = detect_column_mapping(columns)
         
         return FilePreviewResponse(
@@ -90,4 +108,6 @@ async def upload_preview(file: UploadFile = File(...)):
         )
         
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")

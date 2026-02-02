@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from app.core.database import get_db, SessionLocal
+from app.core.settings import settings
+from app.core.security import CurrentUser, get_current_user, require_admin
 from app.models.job import Job, JobStatus
 from app.models.decision_maker import DecisionMaker
-from app.models.credit_state import CreditState
 from app.schemas.job import JobCreate, JobResponse
-from app.services.decision_maker_rules import build_query_keywords, is_decision_maker_title
+from app.services.costs import compute_job_cost_fields
+from app.services.decision_maker_rules import decision_maker_query_keywords, is_decision_maker_title, title_matches_keywords
+from app.services.credits_engine import recalculate_effective_balance, spend_credits_for_job
 from app.services.scraper import ScraperService
 import json
 import asyncio
@@ -18,9 +21,20 @@ import os
 import re
 import logging
 import sys
+from datetime import datetime
+from uuid import uuid4
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 logger = logging.getLogger(__name__)
+
+def _parse_iso_datetime(raw: object) -> datetime | None:
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
 
 def _is_url_like(raw: object) -> bool:
     v = str(raw or "").strip()
@@ -303,12 +317,19 @@ def _resolve_company_fields(dm: DecisionMaker, mappings: dict) -> dict[str, str]
         inferred_city, _ = _split_location_to_city_country(raw_location)
         city = _clean_city(inferred_city) or ""
 
+    address = _text(getattr(dm, "company_address", ""))
+    if _is_placeholder_value(address):
+        address = ""
+    if not address:
+        address = _text(raw_location)
+
     return {
         "company_name": name,
         "company_type": ctype,
         "company_city": city,
         "company_country": country,
         "company_website": site,
+        "company_address": address,
     }
 
 def _resolve_company_fields_for_save(
@@ -390,12 +411,15 @@ class DecisionMakerResponse(BaseModel):
     company_city: str
     company_country: str
     company_website: str
+    company_address: str
+    gmaps_rating: float | None = None
+    gmaps_reviews: int | None = None
     name: str
     title: str
     platform: str
     profile_url: str
+    emails_found: str
     confidence_score: str
-    reasoning: str
 
 def _dm_to_response(dm: DecisionMaker, mappings: dict | None = None) -> DecisionMakerResponse:
     resolved = _resolve_company_fields(dm, mappings or {})
@@ -406,12 +430,15 @@ def _dm_to_response(dm: DecisionMaker, mappings: dict | None = None) -> Decision
         company_city=resolved.get("company_city", ""),
         company_country=resolved.get("company_country", ""),
         company_website=resolved.get("company_website", ""),
+        company_address=resolved.get("company_address", ""),
+        gmaps_rating=(float(getattr(dm, "gmaps_rating")) if getattr(dm, "gmaps_rating", None) is not None else None),
+        gmaps_reviews=(int(getattr(dm, "gmaps_reviews")) if getattr(dm, "gmaps_reviews", None) is not None else None),
         name=_non_empty(getattr(dm, "name", ""), "Unknown"),
         title=_non_empty(getattr(dm, "title", ""), "Unknown"),
         platform=_non_empty(getattr(dm, "platform", ""), "Unknown"),
         profile_url=_text(getattr(dm, "profile_url", "")),
+        emails_found=_text(getattr(dm, "emails_found", "")),
         confidence_score=_non_empty(getattr(dm, "confidence_score", ""), "UNKNOWN"),
-        reasoning=_non_empty(getattr(dm, "reasoning", ""), "N/A"),
     )
 
 
@@ -451,25 +478,19 @@ async def _process_job_task(job_id: int):
         companies = job.companies_data or []
 
         selected_platforms = job.selected_platforms or []
-        max_contacts_total = job.max_contacts_total or 0
-        max_contacts_per_company = job.max_contacts_per_company or 0
-        platforms_multiplier = max(1, len(selected_platforms))
+        platforms_multiplier = 1
         job_options = getattr(job, "options", None) or {}
         deep_search = bool(job_options.get("deep_search"))
-        seniorities = job_options.get("seniorities")
-        departments = job_options.get("departments")
-        if not isinstance(seniorities, list):
-            seniorities = None
-        if not isinstance(departments, list):
-            departments = None
-        query_keywords = build_query_keywords(seniorities, departments)
-        credits_per_contact = platforms_multiplier + (1 if deep_search else 0)
-        found_total = 0
-        credit_state = db.query(CreditState).filter(CreditState.id == 1).first()
-        if credit_state is None:
-            credit_state = CreditState(id=1, balance=int(os.getenv("CREDITS_INITIAL_BALANCE", "0") or "0"))
-            db.add(credit_state)
+        platforms_for_search: list[str] = []
+        job_titles = job_options.get("job_titles")
+        job_titles = [str(x).strip() for x in (job_titles or []) if str(x).strip()] if isinstance(job_titles, list) else []
+        query_keywords = job_titles[:5] if job_titles else decision_maker_query_keywords()[:5]
+        credits_per_company = 1
+        if not job.user_id:
+            job.status = JobStatus.FAILED
+            job.stop_reason = "missing_user"
             db.commit()
+            return
         
         company_col = mappings.get("company_name")
         location_col = mappings.get("location", "")
@@ -480,21 +501,35 @@ async def _process_job_task(job_id: int):
         country_col = mappings.get("country", "")
         
         logger.info(
-            "process_job_task.options job_id=%s selected_platforms=%s max_total=%s max_per_company=%s credits_per_contact=%s deep_search=%s",
+            "process_job_task.options job_id=%s selected_platforms=%s credits_per_company=%s deep_search=%s",
             job_id,
             selected_platforms,
-            max_contacts_total,
-            max_contacts_per_company,
-            credits_per_contact,
+            credits_per_company,
             deep_search,
         )
 
         concurrency = int(os.getenv("JOB_CONCURRENCY", "25") or "25")
         concurrency = max(1, min(concurrency, 500))
         search_limit = 3
-        enrichment_search_limit = 5
+        max_people_per_company = int(os.getenv("MAX_PEOPLE_PER_COMPANY", "25") or "25")
+        max_people_per_company = max(1, min(max_people_per_company, 100))
 
-        async def _scrape_one(idx: int, company: dict, remaining_total: int | None) -> dict:
+        async def _scrape_one(idx: int, company: dict) -> dict:
+            llm_started = 0
+            llm_succeeded = 0
+            serper_calls = 0
+            llm_prompt_tokens = 0
+            llm_completion_tokens = 0
+            llm_total_tokens = 0
+
+            def add_llm_usage(trace: dict) -> None:
+                nonlocal llm_prompt_tokens, llm_completion_tokens, llm_total_tokens
+                usage = trace.get("llm_usage") if isinstance(trace.get("llm_usage"), dict) else {}
+                for phase in ["plan", "final"]:
+                    u = usage.get(phase) if isinstance(usage.get(phase), dict) else {}
+                    llm_prompt_tokens += int(u.get("prompt_tokens") or 0)
+                    llm_completion_tokens += int(u.get("completion_tokens") or 0)
+                    llm_total_tokens += int(u.get("total_tokens") or 0)
             company_name = _text(company.get(company_col) if company_col else "")
             location = _text(company.get(location_col) if location_col else "")
             google_maps_url = company.get(gmaps_col) if gmaps_col else None
@@ -516,29 +551,8 @@ async def _process_job_task(job_id: int):
                     company_country = _clean_country(inferred_country) or None
 
             location_hint = _text(location) or ", ".join([p for p in [_text(company_city), _text(company_country)] if p])
-
-            needs_enrichment = bool((not company_name) or (not company_country) or (not company_type) or (not website))
-            if needs_enrichment:
-                enriched = await scraper.enrich_company(
-                    company_name=company_name,
-                    location=location_hint,
-                    google_maps_url=google_maps_url,
-                    website=website,
-                    search_limit=enrichment_search_limit,
-                )
-                enriched_name = _clean_company_name(enriched.get("company_name"))
-                company_name = enriched_name or _clean_company_name(company_name)
-                if not company_name and website:
-                    company_name = _clean_company_name(scraper._guess_company_name_from_website(website))
-
-                enriched_type = _clean_company_type(enriched.get("company_type"))
-                company_type = company_type or (enriched_type or None)
-                if company_type:
-                    company_type = _clean_company_type(company_type) or None
-
-                website = (_text(website) or _text(enriched.get("company_website"))) or None
-                company_city = _clean_city(company_city or enriched.get("company_city")) or None
-                company_country = _clean_country(company_country or enriched.get("company_country")) or None
+            if not company_name and website:
+                company_name = _clean_company_name(scraper._guess_company_name_from_website(website))
 
             resolved_company = _resolve_company_fields_for_save(
                 company_name=company_name,
@@ -552,9 +566,7 @@ async def _process_job_task(job_id: int):
                 scraper=scraper,
             )
 
-            is_usable_company = bool(resolved_company.get("company_name")) and bool(
-                resolved_company.get("company_country") or resolved_company.get("company_city")
-            )
+            is_usable_company = bool(resolved_company.get("company_name"))
             if not is_usable_company:
                 return {
                     "idx": idx,
@@ -562,21 +574,46 @@ async def _process_job_task(job_id: int):
                     "location_hint": location_hint,
                     "resolved_company": resolved_company,
                     "results": [],
+                    "llm_started": llm_started,
+                    "llm_succeeded": llm_succeeded,
                 }
 
-            remaining_per_company = max_contacts_per_company if max_contacts_per_company else None
-            results = await scraper.process_company(
-                resolved_company.get("company_name") or "",
-                location_hint,
+            results, trace_people = await scraper.process_company_with_trace(
+                company_name=resolved_company.get("company_name") or "",
+                location=location_hint,
                 google_maps_url=google_maps_url,
                 website=resolved_company.get("company_website") or None,
-                platforms=selected_platforms,
-                max_people=remaining_per_company,
-                remaining_total=remaining_total,
+                company_type=resolved_company.get("company_type") or None,
+                platforms=platforms_for_search,
+                max_people=max_people_per_company,
                 search_limit=search_limit,
                 deep_search=deep_search,
                 query_keywords=query_keywords,
             )
+            if isinstance(trace_people, dict):
+                llm_started += int(trace_people.get("llm_calls") or 0)
+                llm_succeeded += int(trace_people.get("llm_calls") or 0)
+                serper_calls += int(trace_people.get("serper_calls") or 0)
+                add_llm_usage(trace_people)
+            if isinstance(results, list):
+                for r in results:
+                    if not isinstance(r, dict):
+                        continue
+                    if isinstance(trace_people, dict):
+                        r["_trace_people"] = trace_people
+                    website_found = _text(r.get("company_website", ""))
+                    if website_found and not _text(resolved_company.get("company_website", "")):
+                        resolved_company["company_website"] = website_found
+                    ctype_found = _text(r.get("company_type", ""))
+                    if ctype_found and not _text(resolved_company.get("company_type", "")):
+                        resolved_company["company_type"] = ctype_found
+                    addr_found = _text(r.get("company_address", ""))
+                    if addr_found and not _text(resolved_company.get("company_address", "")):
+                        resolved_company["company_address"] = addr_found
+                    if "gmaps_rating" in r and "gmaps_rating" not in resolved_company:
+                        resolved_company["gmaps_rating"] = r.get("gmaps_rating")
+                    if "gmaps_reviews" in r and "gmaps_reviews" not in resolved_company:
+                        resolved_company["gmaps_reviews"] = r.get("gmaps_reviews")
 
             return {
                 "idx": idx,
@@ -584,20 +621,23 @@ async def _process_job_task(job_id: int):
                 "location_hint": location_hint,
                 "resolved_company": resolved_company,
                 "results": results or [],
+                "llm_started": llm_started,
+                "llm_succeeded": llm_succeeded,
+                "serper_calls": serper_calls,
+                "llm_prompt_tokens": llm_prompt_tokens,
+                "llm_completion_tokens": llm_completion_tokens,
+                "llm_total_tokens": llm_total_tokens,
             }
 
+        abort_job = False
         for batch_start in range(0, len(companies), concurrency):
             db.refresh(job)
             if job.status == JobStatus.CANCELLED:
                 logger.info("process_job_task.cancelled_during_run job_id=%s processed_companies=%s", job_id, job.processed_companies)
                 break
-            if max_contacts_total and found_total >= max_contacts_total:
-                logger.info("process_job_task.hit_overall_limit job_id=%s found_total=%s", job_id, found_total)
-                break
 
             batch = [(i, companies[i]) for i in range(batch_start, min(batch_start + concurrency, len(companies)))]
-            remaining_total = (max_contacts_total - found_total) if max_contacts_total else None
-            tasks = [_scrape_one(i, c, remaining_total) for i, c in batch if isinstance(c, dict)]
+            tasks = [_scrape_one(i, c) for i, c in batch if isinstance(c, dict)]
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
 
             for out in batch_results:
@@ -605,12 +645,43 @@ async def _process_job_task(job_id: int):
                 company = None
                 if isinstance(out, Exception):
                     logger.exception("process_job_task.company_error job_id=%s", job_id)
-                    continue
+                    job.status = JobStatus.FAILED
+                    job.stop_reason = "company_error"
+                    db.commit()
+                    abort_job = True
+                    break
 
                 idx = int(out.get("idx", -1))
                 company = out.get("company") or {}
                 resolved_company = out.get("resolved_company") or {}
                 results = out.get("results") or []
+                job.llm_calls_started = int(job.llm_calls_started or 0) + int(out.get("llm_started") or 0)
+                job.llm_calls_succeeded = int(job.llm_calls_succeeded or 0) + int(out.get("llm_succeeded") or 0)
+                if hasattr(job, "serper_calls"):
+                    job.serper_calls = int(getattr(job, "serper_calls", 0) or 0) + int(out.get("serper_calls") or 0)
+                if hasattr(job, "llm_prompt_tokens"):
+                    job.llm_prompt_tokens = int(getattr(job, "llm_prompt_tokens", 0) or 0) + int(out.get("llm_prompt_tokens") or 0)
+                if hasattr(job, "llm_completion_tokens"):
+                    job.llm_completion_tokens = int(getattr(job, "llm_completion_tokens", 0) or 0) + int(
+                        out.get("llm_completion_tokens") or 0
+                    )
+                if hasattr(job, "llm_total_tokens"):
+                    job.llm_total_tokens = int(getattr(job, "llm_total_tokens", 0) or 0) + int(out.get("llm_total_tokens") or 0)
+                if hasattr(job, "llm_cost_usd") and hasattr(job, "serper_cost_usd") and hasattr(job, "total_cost_usd"):
+                    cf = compute_job_cost_fields(
+                        llm_prompt_tokens=int(getattr(job, "llm_prompt_tokens", 0) or 0),
+                        llm_completion_tokens=int(getattr(job, "llm_completion_tokens", 0) or 0),
+                        serper_calls=int(getattr(job, "serper_calls", 0) or 0),
+                        contacts_found=int(job.decision_makers_found or 0),
+                        input_cost_per_m=float(settings.llm_input_cost_per_m),
+                        output_cost_per_m=float(settings.llm_output_cost_per_m),
+                        serper_cost_per_1k=float(settings.serper_cost_per_1k),
+                    )
+                    job.llm_cost_usd = float(cf.get("llm_cost_usd") or 0.0)
+                    job.serper_cost_usd = float(cf.get("serper_cost_usd") or 0.0)
+                    job.total_cost_usd = float(cf.get("total_cost_usd") or 0.0)
+                    if hasattr(job, "cost_per_contact_usd"):
+                        job.cost_per_contact_usd = float(cf.get("cost_per_contact_usd") or 0.0)
 
                 logger.info(
                     "process_job_task.company_results job_id=%s idx=%s results=%s",
@@ -620,56 +691,147 @@ async def _process_job_task(job_id: int):
                 )
 
                 is_usable_company = bool(resolved_company.get("company_name")) and bool(
-                    resolved_company.get("company_country") or resolved_company.get("company_city")
+                    resolved_company.get("company_country")
+                    or resolved_company.get("company_city")
+                    or resolved_company.get("company_website")
                 )
+                company_name_out = _text(resolved_company.get("company_name", ""))
+                company_type_out = _text(resolved_company.get("company_type", ""))
+                company_city_out = _text(resolved_company.get("company_city", ""))
+                company_country_out = _text(resolved_company.get("company_country", ""))
+                company_website_out = _text(resolved_company.get("company_website", ""))
+                company_address_out = _text(resolved_company.get("company_address", "")) or _text(company.get(location_col) if location_col else "")
+                gmaps_rating_out = None
+                gmaps_reviews_out = None
+                try:
+                    if resolved_company.get("gmaps_rating") is not None:
+                        gmaps_rating_out = float(resolved_company.get("gmaps_rating"))
+                except Exception:
+                    gmaps_rating_out = None
+                try:
+                    if resolved_company.get("gmaps_reviews") is not None:
+                        gmaps_reviews_out = int(float(resolved_company.get("gmaps_reviews")))
+                except Exception:
+                    gmaps_reviews_out = None
+                valid_results: list[dict] = []
                 for res in results:
-                    if max_contacts_total and found_total >= max_contacts_total:
-                        break
                     if not is_usable_company:
                         break
-
                     title_candidate = _text(res.get("title"))
-                    ok_title, _ = is_decision_maker_title(title_candidate)
+                    ok_title = False
+                    if query_keywords:
+                        ok_title = title_matches_keywords(title_candidate, query_keywords)
+                    else:
+                        ok_title, _ = is_decision_maker_title(title_candidate)
                     if not ok_title:
                         continue
+                    name_candidate = _text(res.get("name"))
+                    if not name_candidate or name_candidate.strip().lower() in {"unknown", "n/a", "na", "-"}:
+                        continue
+                    if isinstance(res, dict):
+                        valid_results.append(res)
 
-                    if credit_state.balance < credits_per_contact:
+                if is_usable_company:
+                    try:
+                        spend_credits_for_job(db, user_id=job.user_id, amount=credits_per_company, job_id=job.id)
+                    except Exception:
                         job.stop_reason = "credits_exhausted"
                         job.status = JobStatus.COMPLETED
                         db.commit()
-                        logger.info(
-                            "process_job_task.credits_exhausted job_id=%s balance=%s needed=%s",
-                            job_id,
-                            credit_state.balance,
-                            credits_per_contact,
-                        )
+                        logger.info("process_job_task.credits_exhausted job_id=%s needed=%s", job_id, credits_per_company)
+                        abort_job = True
                         break
+                    job.credits_spent = (job.credits_spent or 0) + credits_per_company
 
-                    credit_state.balance -= credits_per_contact
+                for res in valid_results:
+                    title_candidate = _text(res.get("title"))
+                    name_candidate = _text(res.get("name"))
+                    name_out = _non_empty(name_candidate, "Unknown")
+                    title_out = _non_empty(title_candidate, "Unknown")
+                    platform_out = _non_empty(res.get("platform", "Web"), "Web")
+                    emails_in = res.get("emails_found")
+                    emails_list: list[str] = []
+                    if isinstance(emails_in, list):
+                        for x in emails_in:
+                            xs = _text(x)
+                            if xs:
+                                emails_list.append(xs)
+                    elif isinstance(emails_in, str):
+                        emails_list = [x.strip() for x in emails_in.split(",") if x.strip()]
+                    seen_emails: set[str] = set()
+                    emails_norm: list[str] = []
+                    for e in emails_list:
+                        k = e.strip().lower()
+                        if not k or k in seen_emails:
+                            continue
+                        seen_emails.add(k)
+                        emails_norm.append(k)
+                    emails_out = ", ".join(emails_norm[:25])
+                    trace_company = resolved_company.get("_trace_company") if isinstance(resolved_company, dict) else None
+                    trace_company = trace_company if isinstance(trace_company, dict) else None
+                    trace_people = res.get("_trace_people") if isinstance(res, dict) else None
+                    trace_people = trace_people if isinstance(trace_people, dict) else None
+                    llm_input = None
+                    serper_queries = None
+                    llm_output = None
+                    if trace_company or trace_people:
+                        llm_input = json.dumps(
+                            {
+                                "company": (trace_company.get("llm_input") if trace_company else None),
+                                "people": (trace_people.get("llm_input") if trace_people else None),
+                            },
+                            ensure_ascii=False,
+                        )
+                        serper_queries = json.dumps(
+                            {
+                                "company": (trace_company.get("serper_queries") if trace_company else None),
+                                "people": (trace_people.get("serper_queries") if trace_people else None),
+                            },
+                            ensure_ascii=False,
+                        )
+                        llm_output = json.dumps(
+                            {
+                                "company": (trace_company.get("llm_output") if trace_company else None),
+                                "people": (trace_people.get("llm_output") if trace_people else None),
+                            },
+                            ensure_ascii=False,
+                        )
 
-                    name_out = _non_empty(res.get("name"), "Unknown")
-                    title_out = title_candidate
-                    platform_out = _non_empty(res.get("platform", "LinkedIn"), "Unknown")
+                    llm_call_ts = _parse_iso_datetime(
+                        _text((trace_people.get("llm_call_timestamp") if trace_people else None))
+                        or _text((trace_company.get("llm_call_timestamp") if trace_company else None))
+                    )
+                    serper_call_ts = _parse_iso_datetime(
+                        _text((trace_people.get("serper_call_timestamp") if trace_people else None))
+                        or _text((trace_company.get("serper_call_timestamp") if trace_company else None))
+                    )
 
                     dm = DecisionMaker(
+                        user_id=job.user_id,
                         job_id=job.id,
-                        company_name=_text(resolved_company.get("company_name", "")),
-                        company_type=_text(resolved_company.get("company_type", "")),
-                        company_city=_text(resolved_company.get("company_city", "")),
-                        company_country=_text(resolved_company.get("company_country", "")),
-                        company_website=_text(resolved_company.get("company_website", "")),
+                        company_name=company_name_out,
+                        company_type=company_type_out,
+                        company_city=company_city_out,
+                        company_country=company_country_out,
+                        company_website=company_website_out,
+                        company_address=company_address_out,
+                        gmaps_rating=gmaps_rating_out,
+                        gmaps_reviews=gmaps_reviews_out,
                         name=name_out,
                         title=title_out,
                         platform=platform_out,
                         profile_url=_text(res.get("profile_url")),
+                        emails_found=emails_out,
                         confidence_score=res.get("confidence"),
-                        reasoning=res.get("reasoning"),
                         uploaded_company_data=json.dumps(company, ensure_ascii=False),
+                        llm_input=llm_input,
+                        serper_queries=serper_queries,
+                        llm_output=llm_output,
+                        llm_call_timestamp=llm_call_ts,
+                        serper_call_timestamp=serper_call_ts,
                     )
                     db.add(dm)
                     job.decision_makers_found += 1
-                    job.credits_spent = (job.credits_spent or 0) + credits_per_contact
-                    found_total += 1
 
                 job.processed_companies += 1
                 db.commit()
@@ -681,8 +843,10 @@ async def _process_job_task(job_id: int):
                     job.decision_makers_found,
                     job.credits_spent,
                 )
+            if abort_job:
+                break
             
-        if job.status != JobStatus.CANCELLED:
+        if job.status == JobStatus.PROCESSING:
             job.status = JobStatus.COMPLETED
         
         db.commit()
@@ -741,57 +905,77 @@ async def process_job_task(job_id: int):
     await _process_job_task(job_id)
 
 @router.post("/jobs", response_model=JobResponse)
-async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def create_job(
+    job_in: JobCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
     logger.info(
-        "create_job.request filename=%s rows=%s selected_platforms=%s max_total=%s max_per_company=%s",
+        "create_job.request filename=%s rows=%s selected_platforms=%s",
         job_in.filename,
         len(job_in.file_content or []),
         job_in.selected_platforms,
-        job_in.max_contacts_total,
-        job_in.max_contacts_per_company,
     )
 
-    required_keys = ["company_name", "industry", "location", "website"]
-    missing_mappings = [k for k in required_keys if not _text((job_in.mappings or {}).get(k, ""))]
-    if missing_mappings:
-        raise HTTPException(status_code=400, detail=f"Missing required mappings: {', '.join(missing_mappings)}")
+    mappings = job_in.mappings or {}
+    company_col = _text(mappings.get("company_name", ""))
+    if not company_col:
+        raise HTTPException(status_code=400, detail="Missing required mapping: Company Name")
+    if not _text(mappings.get("location", "")):
+        raise HTTPException(status_code=400, detail="Missing required mapping: Address")
+    website_col = _text(mappings.get("website", ""))
 
-    selected = [p for p in (job_in.selected_platforms or []) if isinstance(p, str) and p.strip()]
-    if not selected:
-        raise HTTPException(status_code=400, detail="Select at least one platform")
+    raw_titles = job_in.job_titles or []
+    titles = [str(x).strip() for x in raw_titles if str(x).strip()]
+    deduped_titles: list[str] = []
+    seen_titles: set[str] = set()
+    for t in titles:
+        k = t.lower()
+        if k in seen_titles:
+            continue
+        seen_titles.add(k)
+        deduped_titles.append(t)
+    deduped_titles = deduped_titles[:5]
+    if not deduped_titles:
+        raise HTTPException(status_code=400, detail="Please provide 1-5 job titles")
+
+    selected = ["linkedin"]
     if "linkedin" not in selected:
         selected = ["linkedin", *selected]
 
-    required_cols = [(k, job_in.mappings.get(k)) for k in required_keys]
     rows = job_in.file_content or []
-    blank_rows = 0
+    kept_rows: list[dict] = []
     for row in rows:
         if not isinstance(row, dict):
-            blank_rows += 1
             continue
-        for _, col in required_cols:
-            if not _text(row.get(col, "")):
-                blank_rows += 1
-                break
-    if blank_rows:
-        raise HTTPException(status_code=400, detail=f"Some rows have blank values in required columns (rows affected: {blank_rows})")
+        name_ok = bool(company_col and _text(row.get(company_col, "")))
+        website_ok = bool(website_col and _text(row.get(website_col, "")))
+        if name_ok or website_ok:
+            kept_rows.append(row)
+    if not kept_rows:
+        raise HTTPException(
+            status_code=400,
+            detail="All rows were blank for both Company Name and Company Website. Fill at least one of those fields, or map Company Website.",
+        )
 
     # Create Job record
     db_job = Job(
+        user_id=current_user.id,
+        support_id=uuid4().hex[:12].upper(),
         filename=job_in.filename,
-        column_mappings=json.loads(json.dumps(job_in.mappings)),
-        companies_data=json.loads(json.dumps(job_in.file_content)),
-        total_companies=len(job_in.file_content),
+        column_mappings=json.loads(json.dumps(mappings)),
+        companies_data=json.loads(json.dumps(kept_rows)),
+        total_companies=len(kept_rows),
         status=JobStatus.QUEUED,
         selected_platforms=json.loads(json.dumps(selected)),
-        max_contacts_total=job_in.max_contacts_total,
-        max_contacts_per_company=job_in.max_contacts_per_company,
+        max_contacts_total=0,
+        max_contacts_per_company=0,
         credits_spent=0,
         stop_reason=None,
         options={
             "deep_search": bool(job_in.deep_search),
-            "seniorities": (job_in.seniorities or None),
-            "departments": (job_in.departments or None),
+            "job_titles": deduped_titles,
         },
     )
     
@@ -807,12 +991,18 @@ async def create_job(job_in: JobCreate, background_tasks: BackgroundTasks, db: S
 
 
 @router.get("/jobs", response_model=List[JobResponse])
-async def list_jobs(limit: int = 25, offset: int = 0, db: Session = Depends(get_db)):
+async def list_jobs(
+    limit: int = 25,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
 
     jobs = (
         db.query(Job)
+        .filter(Job.user_id == current_user.id)
         .order_by(Job.created_at.desc(), Job.id.desc())
         .offset(offset)
         .limit(limit)
@@ -821,16 +1011,16 @@ async def list_jobs(limit: int = 25, offset: int = 0, db: Session = Depends(get_
     return jobs
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
-async def get_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+async def get_job(job_id: int, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == current_user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
-async def cancel_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+async def cancel_job(job_id: int, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == current_user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -843,13 +1033,28 @@ async def cancel_job(job_id: int, db: Session = Depends(get_db)):
     return job
 
 @router.get("/jobs/{job_id}/results", response_model=List[DecisionMakerResponse])
-async def get_job_results(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+async def get_job_results(job_id: int, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == current_user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    deep_search = bool((getattr(job, "options", None) or {}).get("deep_search"))
     mappings = job.column_mappings or {}
-    results = db.query(DecisionMaker).filter(DecisionMaker.job_id == job_id).order_by(DecisionMaker.id.asc()).all()
-    return [_dm_to_response(dm, mappings) for dm in results]
+    results = (
+        db.query(DecisionMaker)
+        .filter(
+            DecisionMaker.job_id == job_id,
+            DecisionMaker.name.isnot(None),
+            DecisionMaker.name != "",
+            DecisionMaker.name != "Unknown",
+        )
+        .order_by(DecisionMaker.id.asc())
+        .all()
+    )
+    items = [_dm_to_response(dm, mappings) for dm in results]
+    if not deep_search:
+        for it in items:
+            it.platform = "Default sources"
+    return items
 
 
 @router.get("/jobs/{job_id}/results/paged", response_model=DecisionMakerListResponse)
@@ -859,14 +1064,21 @@ async def get_job_results_paged(
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == current_user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    deep_search = bool((getattr(job, "options", None) or {}).get("deep_search"))
     mappings = job.column_mappings or {}
-    query = db.query(DecisionMaker).filter(DecisionMaker.job_id == job_id)
+    query = db.query(DecisionMaker).filter(
+        DecisionMaker.job_id == job_id,
+        DecisionMaker.name.isnot(None),
+        DecisionMaker.name != "",
+        DecisionMaker.name != "Unknown",
+    )
 
     if q:
         q_like = f"%{q}%"
@@ -877,27 +1089,42 @@ async def get_job_results_paged(
                 DecisionMaker.company_city.ilike(q_like),
                 DecisionMaker.company_country.ilike(q_like),
                 DecisionMaker.company_website.ilike(q_like),
+                DecisionMaker.company_address.ilike(q_like),
                 DecisionMaker.name.ilike(q_like),
                 DecisionMaker.title.ilike(q_like),
                 DecisionMaker.platform.ilike(q_like),
+                DecisionMaker.emails_found.ilike(q_like),
                 DecisionMaker.profile_url.ilike(q_like),
-                DecisionMaker.reasoning.ilike(q_like),
             )
         )
 
     total = query.count()
     rows = query.order_by(DecisionMaker.id.asc()).offset(offset).limit(limit).all()
     items = [_dm_to_response(dm, mappings) for dm in rows]
+    if not deep_search:
+        for it in items:
+            it.platform = "Default sources"
     return DecisionMakerListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/jobs/{job_id}/results.csv")
-async def download_job_results_csv(job_id: int, q: str | None = None, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+async def download_job_results_csv(
+    job_id: int,
+    q: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == current_user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    deep_search = bool((getattr(job, "options", None) or {}).get("deep_search"))
     mappings = job.column_mappings or {}
-    query = db.query(DecisionMaker).filter(DecisionMaker.job_id == job_id)
+    query = db.query(DecisionMaker).filter(
+        DecisionMaker.job_id == job_id,
+        DecisionMaker.name.isnot(None),
+        DecisionMaker.name != "",
+        DecisionMaker.name != "Unknown",
+    )
 
     if q:
         q_like = f"%{q}%"
@@ -908,87 +1135,55 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
                 DecisionMaker.company_city.ilike(q_like),
                 DecisionMaker.company_country.ilike(q_like),
                 DecisionMaker.company_website.ilike(q_like),
+                DecisionMaker.company_address.ilike(q_like),
                 DecisionMaker.name.ilike(q_like),
                 DecisionMaker.title.ilike(q_like),
                 DecisionMaker.platform.ilike(q_like),
+                DecisionMaker.emails_found.ilike(q_like),
                 DecisionMaker.profile_url.ilike(q_like),
-                DecisionMaker.reasoning.ilike(q_like),
             )
         )
 
     rows = query.order_by(DecisionMaker.id.asc()).all()
-
-    company_cols: list[str] = []
-    seen_company_cols: set[str] = set()
-    website_input_col = _text((mappings or {}).get("website"))
-
-    def _exclude_company_col(raw: object) -> bool:
-        k = _text(raw)
-        if not k:
-            return True
-        if website_input_col and k == website_input_col:
-            return True
-        kl = k.lower().replace("_", " ").strip()
-        if "website" in kl:
-            return True
-        return False
-
-    if job and isinstance(job.companies_data, list) and len(job.companies_data) > 0 and isinstance(job.companies_data[0], dict):
-        for row in job.companies_data:
-            if not isinstance(row, dict):
-                continue
-            for k in row.keys():
-                if _exclude_company_col(k):
-                    continue
-                if k in seen_company_cols:
-                    continue
-                seen_company_cols.add(k)
-                company_cols.append(str(k))
-
+    resolved_rows: list[tuple[DecisionMaker, dict]] = []
     for dm in rows:
-        payload = _parse_uploaded_company_data(getattr(dm, "uploaded_company_data", None))
-        for k in payload.keys():
-            ks = str(k)
-            if _exclude_company_col(ks):
-                continue
-            if ks in seen_company_cols:
-                continue
-            seen_company_cols.add(ks)
-            company_cols.append(ks)
+        resolved_rows.append((dm, _resolve_company_fields(dm, mappings)))
 
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
         [
+            "Person Name",
+            "Job Title",
+            "Emails Found",
+            "Company Website",
             "Company Name",
             "Company Type",
+            "Company Address",
+            "GMaps Rating",
+            "GMaps Reviews",
             "Company Location",
-            "Contact Name",
-            "Contact Job Title",
-            "Platform",
             "Confidence",
-            "Reasoning",
         ]
-        + [f"Uploaded - {c}" for c in company_cols]
     )
-    for dm in rows:
-        payload = _parse_uploaded_company_data(getattr(dm, "uploaded_company_data", None))
-        resolved = _resolve_company_fields(dm, mappings)
+    for dm, resolved in resolved_rows:
         company_location = ", ".join(
             [p for p in [_text(resolved.get("company_city", "")), _text(resolved.get("company_country", ""))] if p]
         )
         writer.writerow(
             [
-                _text(resolved.get("company_name", "")),
-                _text(resolved.get("company_type", "")),
-                company_location,
                 _non_empty(getattr(dm, "name", ""), "Unknown"),
                 _non_empty(getattr(dm, "title", ""), "Unknown"),
-                _non_empty(getattr(dm, "platform", ""), "Unknown"),
+                _text(getattr(dm, "emails_found", "")),
+                _text(resolved.get("company_website", "")),
+                _text(resolved.get("company_name", "")),
+                _text(resolved.get("company_type", "")),
+                _text(resolved.get("company_address", "")),
+                (str(getattr(dm, "gmaps_rating", "") or "") if getattr(dm, "gmaps_rating", None) is not None else ""),
+                (str(getattr(dm, "gmaps_reviews", "") or "") if getattr(dm, "gmaps_reviews", None) is not None else ""),
+                company_location,
                 _non_empty(getattr(dm, "confidence_score", ""), "UNKNOWN"),
-                _non_empty(getattr(dm, "reasoning", ""), "N/A"),
             ]
-            + [_text(payload.get(c, "")) for c in company_cols]
         )
 
     filename = f"job-{job_id}-results.csv"
@@ -1000,6 +1195,6 @@ async def download_job_results_csv(job_id: int, q: str | None = None, db: Sessio
 
 
 @router.get("/credits", response_model=CreditResponse)
-async def get_credits(db: Session = Depends(get_db)):
-    credit_state = db.query(CreditState).filter(CreditState.id == 1).first()
-    return CreditResponse(balance=int(credit_state.balance if credit_state else 0))
+async def get_credits(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    balance = recalculate_effective_balance(db, current_user.id)
+    return CreditResponse(balance=int(balance))

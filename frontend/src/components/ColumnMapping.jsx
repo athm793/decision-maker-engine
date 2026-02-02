@@ -3,19 +3,9 @@ import { ArrowRight } from 'lucide-react';
 
 const REQUIRED_FIELDS = [
   { key: 'company_name', label: 'Company Name', required: true },
-  { key: 'industry', label: 'Company Type', required: true },
-  { key: 'city', label: 'Company City', required: false },
-  { key: 'country', label: 'Company Country', required: false },
+  { key: 'industry', label: 'Company Type', required: false },
   { key: 'location', label: 'Address', required: true },
-  { key: 'website', label: 'Company Website', required: true },
-];
-
-const PLATFORM_OPTIONS = [
-  { key: 'linkedin', label: 'LinkedIn' },
-  { key: 'google_maps', label: 'Google Maps' },
-  { key: 'facebook', label: 'Facebook' },
-  { key: 'instagram', label: 'Instagram' },
-  { key: 'yelp', label: 'Yelp' },
+  { key: 'website', label: 'Company Website', required: false },
 ];
 
 export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice }) {
@@ -23,12 +13,9 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
   const [errors, setErrors] = useState([]);
   const [companyNameHint, setCompanyNameHint] = useState(null);
   const [websiteHint, setWebsiteHint] = useState(null);
-  const [selectedPlatforms, setSelectedPlatforms] = useState(['linkedin']);
   const [deepSearch, setDeepSearch] = useState(false);
-  const [senioritiesInput, setSenioritiesInput] = useState('');
-  const [departmentsInput, setDepartmentsInput] = useState('');
-  const [maxContactsTotal, setMaxContactsTotal] = useState(50);
-  const [maxContactsPerCompany, setMaxContactsPerCompany] = useState(1);
+  const [jobTitles, setJobTitles] = useState([]);
+  const [jobTitleDraft, setJobTitleDraft] = useState('');
 
   useEffect(() => {
     if (previewData?.suggested_mappings) {
@@ -78,13 +65,32 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
       .filter(Boolean);
   };
 
+  const addJobTitlesFromRaw = (raw) => {
+    const parts = String(raw || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (parts.length === 0) return;
+    setJobTitles((prev) => {
+      const next = [...prev];
+      for (const p of parts) {
+        if (next.length >= 5) break;
+        if (next.some((x) => String(x).toLowerCase() === p.toLowerCase())) continue;
+        next.push(p);
+      }
+      return next;
+    });
+  };
+
+  const commitDraftTitles = () => {
+    const raw = String(jobTitleDraft || '').trim();
+    if (!raw) return;
+    addJobTitlesFromRaw(raw);
+    setJobTitleDraft('');
+  };
+
   const handleConfirm = () => {
     console.groupCollapsed('[Start Processing] validate + submit');
     console.log('mappings:', mappings);
-    console.log('selectedPlatforms:', selectedPlatforms);
     console.log('deepSearch:', deepSearch);
-    console.log('maxContactsTotal:', maxContactsTotal);
-    console.log('maxContactsPerCompany:', maxContactsPerCompany);
+    console.log('jobTitles:', jobTitles);
     const newErrors = [];
     REQUIRED_FIELDS.forEach(field => {
       if (field.required && !mappings[field.key]) {
@@ -109,19 +115,9 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
       setWebsiteHint(null);
     }
 
-    if (!selectedPlatforms || selectedPlatforms.length === 0) newErrors.push('platforms');
-
-    if (!maxContactsTotal || maxContactsTotal < 1) {
-      newErrors.push('max_total');
-    }
-
-    if (!maxContactsPerCompany || maxContactsPerCompany < 1) {
-      newErrors.push('max_per_company');
-    }
-
-    if (maxContactsPerCompany > maxContactsTotal) {
-      newErrors.push('max_per_company');
-      setCompanyNameHint((prev) => prev || 'Per-company limit cannot exceed overall limit.');
+    const titles = jobTitles.slice(0, 5);
+    if (titles.length < 1) {
+      newErrors.push('job_titles');
     }
 
     if (newErrors.length > 0) {
@@ -133,12 +129,9 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
 
     console.log('validation ok, calling onConfirm');
     onConfirm(mappings, {
-      selected_platforms: selectedPlatforms,
-      max_contacts_total: maxContactsTotal,
-      max_contacts_per_company: maxContactsPerCompany,
+      selected_platforms: ['linkedin'],
       deep_search: deepSearch,
-      seniorities: parseList(senioritiesInput),
-      departments: parseList(departmentsInput),
+      job_titles: titles,
     });
     console.groupEnd();
   };
@@ -146,12 +139,7 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
   if (!previewData) return null;
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-6 mac-appear">
-      {error && (
-        <div className="mb-4 p-4 mac-card text-sm mac-hover-lift" style={{ borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', color: 'var(--danger)' }}>
-          {error}
-        </div>
-      )}
+    <div className="w-full max-w-7xl mx-auto p-4 sm:p-6 mac-appear">
       {notice && (
         <div className="mb-4 p-4 mac-card text-sm mac-hover-lift" style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border))', background: 'color-mix(in srgb, var(--accent-weak) 60%, var(--surface))' }}>
           {notice}
@@ -166,171 +154,156 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
           </p>
         </div>
 
-        <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Mapping Form */}
-          <div className="space-y-4">
-            <h3 className="font-medium mb-4">Field Mapping</h3>
-            {REQUIRED_FIELDS.map(field => (
-              <div key={field.key} className="space-y-1">
-                <label className="text-sm font-medium mac-muted flex items-center justify-between">
-                  <span>
-                    {field.label}
-                    {field.required && <span className="text-red-400 ml-1">*</span>}
-                  </span>
-                  {errors.includes(field.key) && (
-                    <span className="text-xs text-[color:var(--danger)]">{field.required ? 'Required' : 'Invalid'}</span>
-                  )}
-                </label>
-                {field.key === 'company_name' && companyNameHint && (
-                  <div className="text-xs mac-muted">{companyNameHint}</div>
-                )}
-                {field.key === 'website' && websiteHint && (
-                  <div className="text-xs mac-muted">{websiteHint}</div>
-                )}
-                <select
-                  value={mappings[field.key] || ''}
-                  onChange={(e) => handleMappingChange(field.key, e.target.value)}
-                  className={`w-full mac-input px-3 py-2 text-sm ${errors.includes(field.key) ? 'ring-2' : ''}`}
-                  style={errors.includes(field.key) ? { borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', boxShadow: '0 0 0 3px var(--danger-weak)' } : undefined}
-                >
-                  <option value="">-- Select Column --</option>
-                  {previewData.columns.map(col => (
-                    <option key={col} value={col}>{col}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-
-            <div className="pt-6">
-              <h3 className="font-medium mb-3">Research Options</h3>
-
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <div className="text-xs mac-muted">Platforms</div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {PLATFORM_OPTIONS.map((p) => (
-                      <label key={p.key} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={selectedPlatforms.includes(p.key)}
-                          disabled={p.key === 'linkedin'}
-                          onChange={(e) => {
-                            setSelectedPlatforms((prev) => {
-                              let next = prev;
-                              if (e.target.checked) {
-                                next = Array.from(new Set([...prev, p.key]));
-                              } else {
-                                next = prev.filter((x) => x !== p.key);
-                              }
-                              if (!next.includes('linkedin')) {
-                                next = ['linkedin', ...next];
-                              }
-                              return next;
-                            });
-                          }}
-                          className="accent-[var(--accent)]"
-                        />
-                        {p.label}
-                      </label>
+        <div className="p-6 space-y-6">
+          <div className="space-y-3">
+            <h3 className="font-medium">File Preview</h3>
+            <div className="border border-[color:var(--border)] rounded-2xl bg-[color:var(--surface)] overflow-hidden">
+              <div className="overflow-auto max-h-[420px]">
+                <table className="text-xs text-left table-auto min-w-max">
+                  <thead className="text-[10px] mac-muted uppercase bg-[color:var(--surface2)] sticky top-0 z-10">
+                    <tr>
+                      {previewData.columns.map(col => (
+                        <th key={col} className="px-3 py-2 border-b border-[color:var(--border)] font-semibold whitespace-nowrap">
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[color:var(--border)]">
+                    {previewData.preview_rows.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-[color:var(--surface2)] transition-colors">
+                        {previewData.columns.map(col => (
+                          <td key={`${idx}-${col}`} className="px-3 py-2 whitespace-nowrap">
+                            {row[col]}
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </div>
-                  <div className="text-xs mac-muted">
-                    Choosing more than 2 platforms will cause the job to process for significantly longer.
-                  </div>
-                  <label className="flex items-center gap-2 text-sm pt-2">
-                    <input
-                      type="checkbox"
-                      checked={deepSearch}
-                      onChange={(e) => setDeepSearch(e.target.checked)}
-                      className="accent-[var(--accent)]"
-                    />
-                    Deep Search (slower, better evidence) (+1 credit per contact found)
-                  </label>
-                  <div className="space-y-2 pt-2">
-                    <div className="text-xs mac-muted">Target Seniorities (optional)</div>
-                    <input
-                      value={senioritiesInput}
-                      onChange={(e) => setSenioritiesInput(e.target.value)}
-                      placeholder="e.g. VP, Director, Head, Senior Director"
-                      className="w-full mac-input px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-xs mac-muted">Target Departments (optional)</div>
-                    <input
-                      value={departmentsInput}
-                      onChange={(e) => setDepartmentsInput(e.target.value)}
-                      placeholder="e.g. Sales, Marketing, Operations"
-                      className="w-full mac-input px-3 py-2 text-sm"
-                    />
-                  </div>
-                  {errors.includes('platforms') && (
-                    <div className="text-xs text-[color:var(--danger)]">Select at least one platform.</div>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs mac-muted">Overall Contact Finding Limit</div>
-                  <input
-                    type="number"
-                    min={1}
-                    value={maxContactsTotal}
-                    onChange={(e) => setMaxContactsTotal(Number(e.target.value))}
-                    className="w-full mac-input px-3 py-2 text-sm"
-                    style={errors.includes('max_total') ? { borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', boxShadow: '0 0 0 3px var(--danger-weak)' } : undefined}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs mac-muted">Contacts Found Per Company Limit</div>
-                  <input
-                    type="number"
-                    min={1}
-                    value={maxContactsPerCompany}
-                    onChange={(e) => setMaxContactsPerCompany(Number(e.target.value))}
-                    className="w-full mac-input px-3 py-2 text-sm"
-                    style={errors.includes('max_per_company') ? { borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', boxShadow: '0 0 0 3px var(--danger-weak)' } : undefined}
-                  />
-                </div>
-
-                <div className="text-xs mac-muted">
-                  {(() => {
-                    const perContact = Math.max(1, selectedPlatforms.length) + (deepSearch ? 1 : 0);
-                    const maxCredits = perContact * (maxContactsTotal || 0);
-                    const fmt = new Intl.NumberFormat();
-                    return `Approx. max credits for this job: ${fmt.format(maxCredits)} (${perContact} per contact)`;
-                  })()}
-                </div>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
 
-          {/* Data Preview */}
-          <div className="md:col-span-2 space-y-4">
-            <h3 className="font-medium mb-4">File Preview</h3>
-            <div className="overflow-x-auto border border-[color:var(--border)] rounded-2xl bg-[color:var(--surface)]">
-              <table className="w-full text-sm text-left">
-                <thead className="text-[10px] mac-muted uppercase bg-[color:var(--surface2)]">
-                  <tr>
-                    {previewData.columns.map(col => (
-                      <th key={col} className="px-4 py-3 whitespace-nowrap border-b border-[color:var(--border)] font-semibold">
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[color:var(--border)]">
-                  {previewData.preview_rows.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-[color:var(--surface2)] transition-colors">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-4">
+              <h3 className="font-medium">Field Mapping</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {REQUIRED_FIELDS.map(field => (
+                  <div key={field.key} className="space-y-1">
+                    <label className="text-sm font-medium mac-muted flex items-center justify-between">
+                      <span>
+                        {field.label}
+                        {field.required && <span className="text-red-400 ml-1">*</span>}
+                      </span>
+                      {errors.includes(field.key) && (
+                        <span className="text-xs text-[color:var(--danger)]">{field.required ? 'Required' : 'Invalid'}</span>
+                      )}
+                    </label>
+                    {field.key === 'company_name' && companyNameHint && (
+                      <div className="text-xs mac-muted">{companyNameHint}</div>
+                    )}
+                    {field.key === 'website' && websiteHint && (
+                      <div className="text-xs mac-muted">{websiteHint}</div>
+                    )}
+                    <select
+                      value={mappings[field.key] || ''}
+                      onChange={(e) => handleMappingChange(field.key, e.target.value)}
+                      className={`w-full mac-input px-3 py-2 text-sm ${errors.includes(field.key) ? 'ring-2' : ''}`}
+                      style={errors.includes(field.key) ? { borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', boxShadow: '0 0 0 3px var(--danger-weak)' } : undefined}
+                    >
+                      <option value="">-- Select Column --</option>
                       {previewData.columns.map(col => (
-                        <td key={`${idx}-${col}`} className="px-4 py-3 whitespace-nowrap">
-                          {row[col]}
-                        </td>
+                        <option key={col} value={col}>{col}</option>
                       ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="font-medium">Research Options</h3>
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={deepSearch} onChange={(e) => setDeepSearch(e.target.checked)} className="accent-[var(--accent)]" />
+                  Deep Search (+1 credit per company, adds location query)
+                </label>
+                <div className="text-xs mac-muted">
+                  For Deep Search, mapping Company Website and Company Type can help find even more contacts.
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <div className="text-xs mac-muted">
+                    Job Titles (required, up to 5, comma-separated)
+                  </div>
+                  <div
+                    className="w-full mac-input px-3 py-2 text-sm flex flex-wrap gap-2 items-center"
+                    style={errors.includes('job_titles') ? { borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', boxShadow: '0 0 0 3px var(--danger-weak)' } : undefined}
+                    onClick={() => document.getElementById('job-title-draft')?.focus()}
+                  >
+                    {jobTitles.map((t) => (
+                      <span key={t} className="inline-flex items-center gap-2 px-2 py-1 rounded-lg bg-[color:var(--surface2)] border border-[color:var(--border)]">
+                        <span>{t}</span>
+                        <button
+                          type="button"
+                          className="mac-muted hover:text-[color:var(--text)]"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setJobTitles((prev) => prev.filter((x) => x !== t));
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    {jobTitles.length < 5 && (
+                      <input
+                        id="job-title-draft"
+                        value={jobTitleDraft}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v.includes(',')) {
+                            const parts = v.split(',');
+                            addJobTitlesFromRaw(parts.slice(0, -1).join(','));
+                            setJobTitleDraft(parts.slice(-1)[0]);
+                          } else {
+                            setJobTitleDraft(v);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            commitDraftTitles();
+                          }
+                          if (e.key === ',' ) {
+                            e.preventDefault();
+                            commitDraftTitles();
+                          }
+                          if (e.key === 'Backspace' && !jobTitleDraft && jobTitles.length > 0) {
+                            e.preventDefault();
+                            setJobTitles((prev) => prev.slice(0, -1));
+                          }
+                        }}
+                        onBlur={() => commitDraftTitles()}
+                        placeholder={jobTitles.length === 0 ? 'e.g. CEO, Founder, Owner' : ''}
+                        className="flex-1 min-w-[120px] bg-transparent outline-none"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-xs mac-muted">
+                  {(() => {
+                    const perCompany = 1 + (deepSearch ? 1 : 0);
+                    const totalCompanies = Number(previewData?.total_rows || 0);
+                    const maxCredits = perCompany * totalCompanies;
+                    const fmt = new Intl.NumberFormat();
+                    return `Approx. max credits for this job: ${fmt.format(maxCredits)} (${perCompany} per company)`;
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -344,8 +317,7 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
           </button>
           <button
             onClick={handleConfirm}
-            disabled={!selectedPlatforms || selectedPlatforms.length === 0}
-            className={`mac-button-primary px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${(!selectedPlatforms || selectedPlatforms.length === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className="mac-button-primary px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
           >
             Start Processing
             <ArrowRight className="w-4 h-4" />

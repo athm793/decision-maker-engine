@@ -18,7 +18,7 @@ export function ResultsTable({
     return (
       <div className="w-full max-w-6xl mx-auto px-6 pb-12">
         <div className="flex items-center justify-between mb-4 gap-4">
-          <h3 className="text-lg font-semibold">Found Decision Makers</h3>
+          <h3 className="text-lg font-semibold">Found Contacts</h3>
           <button
             onClick={onDownload}
             disabled={true}
@@ -36,7 +36,7 @@ export function ResultsTable({
               <input
                 value={query}
                 onChange={(e) => onQueryChange(e.target.value)}
-                placeholder="Search results (company, name, title, URL, reasoning…)"
+                placeholder="Search results (company, name, title, URL…)"
                 className="w-full mac-input pl-10 pr-3 py-2 text-sm"
               />
             </div>
@@ -68,7 +68,7 @@ export function ResultsTable({
     <div className="w-full max-w-6xl mx-auto px-6 pb-12">
       <div className="flex items-center justify-between mb-4 gap-4">
         <div className="flex items-center gap-3">
-          <h3 className="text-lg font-semibold">Found Decision Makers</h3>
+          <h3 className="text-lg font-semibold">Found Contacts</h3>
           {typeof total === 'number' && (
             <span className="text-xs mac-muted">{total} total</span>
           )}
@@ -90,7 +90,7 @@ export function ResultsTable({
           <input
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="Search results (company, name, title, URL, reasoning…)"
+            placeholder="Search results (company, name, title, URL…)"
             className="w-full mac-input pl-10 pr-3 py-2 text-sm"
           />
         </div>
@@ -113,28 +113,30 @@ export function ResultsTable({
           <table className="w-full text-sm text-left">
             <thead className="text-[10px] mac-muted uppercase bg-[color:var(--surface2)]">
               <tr>
+                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Person Name</th>
+                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Job Title</th>
+                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Emails Found</th>
+                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Website</th>
                 <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Name</th>
                 <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Type</th>
+                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Address</th>
+                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">GMaps Rating</th>
+                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">GMaps Reviews</th>
                 <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Location</th>
-                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Company Website</th>
-                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Contact Name</th>
-                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Contact Job Title</th>
-                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Platform</th>
                 <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Confidence</th>
-                <th className="px-6 py-3 border-b border-[color:var(--border)] font-semibold">Reasoning</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[color:var(--border)]">
               {results.map((dm) => (
                 <tr key={dm.id} className="hover:bg-[color:var(--surface2)] transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap font-medium">
-                    {dm.company_name}
+                    {dm.name || 'Unknown'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap mac-muted">
-                    {dm.company_type || ''}
+                    {dm.title || ''}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap mac-muted">
-                    {[dm.company_city, dm.company_country].filter(Boolean).join(', ') || ''}
+                    {dm.emails_found || '—'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {dm.company_website ? (
@@ -151,19 +153,25 @@ export function ResultsTable({
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap font-medium">
-                    {dm.name || 'Unknown'}
+                    {dm.company_name}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap mac-muted">
-                    {dm.title || ''}
+                    {dm.company_type || '—'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="mac-muted">{dm.platform || ''}</span>
+                  <td className="px-6 py-4 whitespace-nowrap mac-muted">
+                    {dm.company_address || '—'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap mac-muted">
+                    {dm.gmaps_rating ?? '—'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap mac-muted">
+                    {dm.gmaps_reviews ?? '—'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap mac-muted">
+                    {[dm.company_city, dm.company_country].filter(Boolean).join(', ') || ''}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getConfidenceBadge(dm.confidence_score)}
-                  </td>
-                  <td className="px-6 py-4 mac-muted max-w-xs truncate" title={dm.reasoning}>
-                    {dm.reasoning}
                   </td>
                 </tr>
               ))}

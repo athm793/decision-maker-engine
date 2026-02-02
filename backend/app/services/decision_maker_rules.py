@@ -138,3 +138,20 @@ def build_query_keywords(seniorities: list[str] | None, departments: list[str] |
         seen.add(k)
         deduped.append(xs)
     return deduped or base
+
+
+def title_matches_keywords(title: str | None, keywords: list[str] | None) -> bool:
+    t = (title or "").strip()
+    if not t:
+        return False
+    for rx in _NEGATIVE_PATTERNS:
+        if rx.search(t):
+            return False
+    kw = [str(x).strip() for x in (keywords or []) if str(x).strip()]
+    if not kw:
+        return False
+    tl = t.lower()
+    for k in kw:
+        if k.lower() in tl:
+            return True
+    return False

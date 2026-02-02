@@ -1,14 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { FileUpload } from './components/FileUpload';
 import { ColumnMapping } from './components/ColumnMapping';
 import { JobProgress } from './components/JobProgress';
 import { ResultsTable } from './components/ResultsTable';
 import { JobHistory } from './components/JobHistory';
-import { Loader2, Square } from 'lucide-react';
-import { ThemeToggle } from './components/ThemeToggle';
+import { ChevronLeft, ChevronRight, Loader2, Square } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { TopBar } from './components/TopBar';
+import { useAuth } from './auth/AuthProvider.jsx';
 
 function App() {
+  const { user, signOut } = useAuth();
   const [step, setStep] = useState('upload'); // upload, mapping, creating_job, processing
   const [file, setFile] = useState(null);
   const [previewData, setPreviewData] = useState(null);
@@ -18,6 +21,7 @@ function App() {
   const [jobId, setJobId] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [jobTimerStartMs, setJobTimerStartMs] = useState(null);
+  const [uploadErrorPopup, setUploadErrorPopup] = useState(null);
   
   // Job State
   const [job, setJob] = useState(null);
@@ -34,17 +38,46 @@ function App() {
   const [isJobHistoryLoading, setIsJobHistoryLoading] = useState(false);
   const [creditsBalance, setCreditsBalance] = useState(null);
   const jobStatus = job?.status;
+  const [navBackStack, setNavBackStack] = useState([]);
+  const [navForwardStack, setNavForwardStack] = useState([]);
+  const [navHint, setNavHint] = useState(null);
+  const navHintTimerRef = useRef(null);
+  const uploadErrorTimerRef = useRef(null);
 
-  const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'light' || saved === 'dark') return saved;
-    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-  });
+  const captureNavState = () => {
+    return { step, jobId: jobId || null };
+  };
+
+  const pushNavBack = (state) => {
+    setNavBackStack((prev) => {
+      const next = [...prev, state];
+      return next.length > 50 ? next.slice(next.length - 50) : next;
+    });
+  };
+
+  const pushNavForward = (state) => {
+    setNavForwardStack((prev) => {
+      const next = [...prev, state];
+      return next.length > 50 ? next.slice(next.length - 50) : next;
+    });
+  };
+
+  const showNavHint = (message) => {
+    setNavHint(message);
+    if (navHintTimerRef.current) clearTimeout(navHintTimerRef.current);
+    navHintTimerRef.current = setTimeout(() => setNavHint(null), 1200);
+  };
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    if (!error) return;
+    if (!['upload', 'mapping', 'creating_job'].includes(step)) return;
+    setUploadErrorPopup(String(error));
+    if (uploadErrorTimerRef.current) clearTimeout(uploadErrorTimerRef.current);
+    uploadErrorTimerRef.current = setTimeout(() => setUploadErrorPopup(null), 5000);
+    return () => {
+      if (uploadErrorTimerRef.current) clearTimeout(uploadErrorTimerRef.current);
+    };
+  }, [error, step]);
 
   // Polling Effect
   useEffect(() => {
@@ -134,13 +167,18 @@ function App() {
 
   useEffect(() => {
     let interval;
+    let inFlight = false;
 
     const fetchCredits = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
-        const response = await axios.get('/api/credits');
+        const response = await axios.get('/api/credits', { timeout: 10000 });
         setCreditsBalance(response.data.balance);
       } catch {
         setCreditsBalance(null);
+      } finally {
+        inFlight = false;
       }
     };
 
@@ -177,7 +215,7 @@ function App() {
     formData.append('file', selectedFile);
 
     try {
-      const response = await axios.post('/api/upload/preview', formData);
+      const response = await axios.post('/api/upload/preview', formData, { timeout: 120000 });
 
       setPreviewData(response.data);
       setStep('mapping');
@@ -185,9 +223,10 @@ function App() {
       console.error('Upload failed:', err);
       const status = err?.response?.status;
       const detail = err?.response?.data?.detail;
+      const isTimeout = err?.code === 'ECONNABORTED';
       const message =
         (status ? `Upload failed (${status}). ` : 'Upload failed. ') +
-        (detail || err?.message || 'Please try again.');
+        (detail || (isTimeout ? 'Timed out while processing the CSV. Try a smaller file or remove unusual formatting.' : (err?.message || 'Please try again.')));
       setError(message);
     } finally {
       setIsUploading(false);
@@ -206,19 +245,66 @@ function App() {
       
       const reader = new FileReader();
       reader.onload = async (e) => {
-        const text = e.target.result;
-        const lines = text.split('\n');
-        const headers = lines[0].split(',').map(h => h.trim());
+        const text = String(e.target.result || '');
+        const parseCsvLine = (line) => {
+          const out = [];
+          let cur = '';
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i += 1) {
+            const ch = line[i];
+            if (ch === '"') {
+              const next = line[i + 1];
+              if (inQuotes && next === '"') {
+                cur += '"';
+                i += 1;
+                continue;
+              }
+              inQuotes = !inQuotes;
+              continue;
+            }
+            if (ch === ',' && !inQuotes) {
+              out.push(cur);
+              cur = '';
+              continue;
+            }
+            cur += ch;
+          }
+          out.push(cur);
+          return out;
+        };
+
+        const normalizeHeaders = (rawHeaders) => {
+          const used = new Map();
+          return rawHeaders.map((h, idx) => {
+            const base = String(h ?? '').trim();
+            const initial = base ? base : `Unnamed: ${idx}`;
+            const count = (used.get(initial) || 0) + 1;
+            used.set(initial, count);
+            if (count === 1) return initial;
+            return `${initial}.${count - 1}`;
+          });
+        };
+
+        const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+        const nonEmptyLines = lines.filter((l) => String(l || '').trim().length > 0);
+        if (nonEmptyLines.length === 0) {
+          setError('CSV file is empty.');
+          setStep('mapping');
+          console.groupEnd();
+          return;
+        }
+
+        const headerFields = parseCsvLine(nonEmptyLines[0]);
+        const headers = normalizeHeaders(headerFields);
         const data = [];
-        
-        for(let i = 1; i < lines.length; i++) {
-            if(!lines[i].trim()) continue;
-            const row = lines[i].split(',');
-            const obj = {};
-            headers.forEach((h, index) => {
-                obj[h] = row[index]?.trim();
-            });
-            data.push(obj);
+
+        for (let i = 1; i < nonEmptyLines.length; i += 1) {
+          const fields = parseCsvLine(nonEmptyLines[i]);
+          const obj = {};
+          for (let c = 0; c < headers.length; c += 1) {
+            obj[headers[c]] = String(fields[c] ?? '').trim();
+          }
+          data.push(obj);
         }
 
         try {
@@ -238,42 +324,49 @@ function App() {
               setNotice(`${duplicates} duplicate row${duplicates === 1 ? '' : 's'} were removed before processing.`);
             }
 
-            const requiredKeys = ['company_name', 'industry', 'location', 'website'];
-            const missingMappings = requiredKeys.filter((k) => !mappings?.[k]);
-            if (missingMappings.length > 0) {
-              setError(`Missing required mappings: ${missingMappings.join(', ')}`);
+            if (!mappings?.company_name) {
+              setError('Missing required mapping: Company Name');
               setStep('mapping');
               console.groupEnd();
               return;
             }
-            const requiredColumns = requiredKeys.map((k) => mappings[k]);
-            let blankRows = 0;
-            for (const rowObj of unique) {
-              for (const col of requiredColumns) {
-                if (!String(rowObj?.[col] ?? '').trim()) {
-                  blankRows += 1;
-                  break;
-                }
-              }
+            if (!mappings?.location) {
+              setError('Missing required mapping: Address');
+              setStep('mapping');
+              console.groupEnd();
+              return;
             }
-            if (blankRows > 0) {
-              setError(`Some rows have blank values in required columns. Fix your CSV and re-upload. (rows affected: ${blankRows})`);
+            const companyCol = mappings?.company_name;
+            const websiteCol = mappings?.website;
+            const kept = [];
+            let missingIdentityRows = 0;
+            for (const rowObj of unique) {
+              const companyVal = companyCol ? String(rowObj?.[companyCol] ?? '').trim() : '';
+              const websiteVal = websiteCol ? String(rowObj?.[websiteCol] ?? '').trim() : '';
+              if (companyVal || websiteVal) kept.push(rowObj);
+              else missingIdentityRows += 1;
+            }
+            if (missingIdentityRows > 0) {
+              setNotice((prev) => {
+                const msg = `${missingIdentityRows} row${missingIdentityRows === 1 ? '' : 's'} were skipped because both Company Name and Company Website were blank.`;
+                return prev ? `${prev} ${msg}` : msg;
+              });
+            }
+            if (kept.length === 0) {
+              setError('All rows were blank for both Company Name and Company Website. Fill at least one of those fields, or map Company Website.');
               setStep('mapping');
               console.groupEnd();
               return;
             }
 
-            console.log('[create job] POST /api/jobs rows=%s', unique.length);
+            console.log('[create job] POST /api/jobs rows=%s', kept.length);
             const response = await axios.post('/api/jobs', {
                 filename: file.name,
                 mappings: mappings,
-                file_content: unique,
+                file_content: kept,
                 selected_platforms: options?.selected_platforms || [],
-                max_contacts_total: options?.max_contacts_total || 50,
-                max_contacts_per_company: options?.max_contacts_per_company || 1,
                 deep_search: Boolean(options?.deep_search),
-                seniorities: (options?.seniorities && options.seniorities.length > 0) ? options.seniorities : null,
-                departments: (options?.departments && options.departments.length > 0) ? options.departments : null,
+                job_titles: (options?.job_titles && options.job_titles.length > 0) ? options.job_titles : null,
             });
             
             setJobId(response.data.id);
@@ -327,6 +420,10 @@ function App() {
   };
 
   const handleNewJob = () => {
+    if (step !== 'upload') {
+      pushNavBack(captureNavState());
+      setNavForwardStack([]);
+    }
     setFile(null);
     setPreviewData(null);
     setError(null);
@@ -343,7 +440,12 @@ function App() {
     setStep('upload');
   }
 
-  const handleSelectJobFromHistory = (id) => {
+  const handleSelectJobFromHistory = (id, options = {}) => {
+    const shouldPush = options.pushNav !== false;
+    if (shouldPush) {
+      pushNavBack(captureNavState());
+      setNavForwardStack([]);
+    }
     setError(null);
     setNotice(null);
     setJobId(id);
@@ -356,6 +458,45 @@ function App() {
     setResultsOffset(0);
     setResultsLimit(25);
     setStep('processing');
+  };
+
+  const handleNavBack = () => {
+    if (navBackStack.length) {
+      const prev = navBackStack[navBackStack.length - 1];
+      setNavBackStack((s) => s.slice(0, -1));
+      pushNavForward(captureNavState());
+      if (prev.step === 'processing' && prev.jobId) {
+        handleSelectJobFromHistory(prev.jobId, { pushNav: false });
+        return;
+      }
+      handleNewJob();
+      return;
+    }
+
+    if (step === 'upload') {
+      showNavHint('No previous view.');
+      return;
+    }
+    if (step === 'mapping') {
+      handleCancel();
+      return;
+    }
+    handleNewJob();
+  };
+
+  const handleNavForward = () => {
+    if (navForwardStack.length) {
+      const next = navForwardStack[navForwardStack.length - 1];
+      setNavForwardStack((s) => s.slice(0, -1));
+      pushNavBack(captureNavState());
+      if (next.step === 'processing' && next.jobId) {
+        handleSelectJobFromHistory(next.jobId, { pushNav: false });
+        return;
+      }
+      handleNewJob();
+      return;
+    }
+    showNavHint('No next view.');
   };
 
   const handleDownloadCsv = async () => {
@@ -389,36 +530,83 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-      <header className="sticky top-0 z-10">
-        <div className="border-b border-[color:var(--border)] bg-[color:var(--bg)]/70 backdrop-blur-md">
-          <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center font-semibold text-white bg-[color:var(--accent)] shadow-sm">
-              D
+      <TopBar
+        left={
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className={
+                  'mac-btn px-2 py-2 text-xs ' +
+                  (step === 'upload' && navBackStack.length === 0 ? 'opacity-50 cursor-not-allowed' : '')
+                }
+                onClick={handleNavBack}
+                aria-label="Back"
+                title="Back"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                className={'mac-btn px-2 py-2 text-xs ' + (navForwardStack.length === 0 ? 'opacity-50 cursor-not-allowed' : '')}
+                onClick={handleNavForward}
+                aria-label="Forward"
+                title="Forward"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
-            <span className="text-base sm:text-lg font-semibold tracking-tight">
-              Decision Maker Discovery
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex text-xs mac-muted mac-button px-3 py-2">
-              Credits: <span className="ml-1 text-[var(--text)]">{typeof creditsBalance === 'number' ? creditsBalance : '—'}</span>
+            <div className="min-w-0">
+              <div className="text-sm sm:text-base font-semibold tracking-tight truncate">localcontacts.biz</div>
             </div>
-            <ThemeToggle theme={theme} onChange={setTheme} />
           </div>
-          </div>
-        </div>
-      </header>
+        }
+        menuTitle="Account"
+        menuItems={({ close }) => (
+          <>
+            <div className="mac-card p-3 text-xs">
+              <div className="mac-muted">Signed in</div>
+              <div className="pt-1 font-semibold truncate">{user?.email || '—'}</div>
+              <div className="pt-2 mac-muted">
+                Credits: <span className="text-[var(--text)]">{typeof creditsBalance === 'number' ? creditsBalance : '—'}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Link className="mac-btn px-3 py-2 text-xs text-center" to="/plans" onClick={close}>
+                Plans
+              </Link>
+              <Link className="mac-btn px-3 py-2 text-xs text-center" to="/admin" onClick={close}>
+                Admin
+              </Link>
+            </div>
+            <button
+              type="button"
+              className="mac-btn mac-btn-primary px-3 py-2 text-xs w-full"
+              onClick={async () => {
+                close();
+                await signOut();
+              }}
+            >
+              Sign out
+            </button>
+          </>
+        )}
+      />
 
       <main className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 py-10">
+        {navHint && (
+          <div className="mb-4">
+            <div className="inline-flex mac-card px-3 py-2 text-xs mac-muted">{navHint}</div>
+          </div>
+        )}
         {step === 'upload' && (
           <div className="space-y-8">
             <div className="text-center space-y-3">
               <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
-                Find Decision Makers in Seconds
+                Find Local Decision Makers in Seconds
               </h1>
               <p className="text-base sm:text-lg mac-muted max-w-2xl mx-auto">
-                Upload your business list and let our AI agents hunt down executives across LinkedIn, Google Maps, and more.
+                Upload your business list and let our AI agent find real decision makers with evidence.
               </p>
             </div>
             
@@ -460,27 +648,35 @@ function App() {
         )}
 
         {step === 'processing' && job && (
-            <div className="space-y-8 animate-in fade-in duration-500">
-                <div className="flex justify-between items-center">
-                    <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Job Dashboard</h1>
-                    <div className="flex items-center gap-3">
-                        {['queued', 'processing'].includes(job.status) && (
-                          <button
-                              onClick={handleStopJob}
-                              disabled={isCancelling}
-                              className="mac-button mac-button-danger px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium flex items-center gap-2"
-                          >
-                              <Square className="w-4 h-4" />
-                              {isCancelling ? 'Stopping…' : 'Stop Job'}
-                          </button>
-                        )}
-                        <button 
-                            onClick={handleNewJob}
-                            className="mac-button px-4 py-2 text-sm font-medium"
-                        >
-                            New Job
-                        </button>
+            <div className="space-y-4 animate-in fade-in duration-500">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="px-3 py-1 rounded-full bg-[color:var(--surface2)] border border-[color:var(--border)] text-xs mac-muted flex-shrink-0">
+                      {(job.status || '').toString().toUpperCase()}
                     </div>
+                    <div className="text-sm font-semibold truncate">Job #{job.id}</div>
+                    {job.status === 'completed' && <div className="text-xs mac-muted flex-shrink-0">Results are final</div>}
+                    {job.status === 'cancelled' && <div className="text-xs mac-muted flex-shrink-0">Stopped early</div>}
+                    {job.status === 'failed' && <div className="text-xs mac-muted flex-shrink-0">Failed</div>}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                      {['queued', 'processing'].includes(job.status) && (
+                        <button
+                            onClick={handleStopJob}
+                            disabled={isCancelling}
+                            className="mac-button mac-button-danger px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium flex items-center gap-2"
+                        >
+                            <Square className="w-4 h-4" />
+                            {isCancelling ? 'Stopping…' : 'Stop'}
+                        </button>
+                      )}
+                      <button
+                          onClick={handleNewJob}
+                          className="mac-button px-3 py-2 text-xs font-medium"
+                      >
+                          New Job
+                      </button>
+                  </div>
                 </div>
 
                 {error && (
@@ -491,22 +687,6 @@ function App() {
                 {notice && !error && (
                   <div className="mac-card p-4 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border))', background: 'color-mix(in srgb, var(--accent-weak) 60%, var(--surface))' }}>
                     {notice}
-                  </div>
-                )}
-
-                {job.status === 'completed' && (
-                  <div className="mac-card p-4 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border))', background: 'color-mix(in srgb, var(--accent-weak) 60%, var(--surface))' }}>
-                    Job completed. Results below are final.
-                  </div>
-                )}
-                {job.status === 'cancelled' && (
-                  <div className="mac-card p-4 text-sm mac-muted">
-                    Job cancelled. Results below include anything found before stopping.
-                  </div>
-                )}
-                {job.status === 'failed' && (
-                  <div className="mac-card p-4 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))', background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', color: 'var(--danger)' }}>
-                    Job failed. Check logs for details.
                   </div>
                 )}
 
@@ -544,6 +724,32 @@ function App() {
           </div>
         )}
       </main>
+      {uploadErrorPopup && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md">
+          <div
+            className="mac-card p-4 text-sm shadow-lg"
+            style={{
+              borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))',
+              background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))',
+              color: 'var(--danger)',
+            }}
+          >
+            <div className="whitespace-pre-wrap">{uploadErrorPopup}</div>
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                className="mac-button px-4 py-2 text-xs font-medium"
+                onClick={() => {
+                  setUploadErrorPopup(null);
+                  setError(null);
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

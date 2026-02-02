@@ -1,9 +1,9 @@
-# Decision Maker Discovery Engine
+# localcontacts.biz
 
 ## Product Overview
 
 ### Vision Statement
-The Decision Maker Discovery Engine automates the discovery of business decision-makers across five social and business platforms: LinkedIn, Google Maps, Yelp, Facebook, and Instagram. Users upload CSV files containing Google Maps business listings; the system hunts down executives, founders, and key personnel using AI-powered analysis of public platform data.
+localcontacts.biz automates the discovery of business decision-makers across five social and business platforms: LinkedIn, Google Maps, Yelp, Facebook, and Instagram. Users upload CSV files containing business listings; the system finds executives, founders, and key personnel using AI-powered analysis of public platform data.
 
 ### Product Type
 SaaS web application with freemium subscription model. Users access through browser interface; no mobile apps in initial release.

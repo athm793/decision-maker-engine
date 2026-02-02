@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from app.api.endpoints import upload, jobs
+from app.api.endpoints import upload, jobs, billing, account, admin
 from app.core.database import engine, Base
 from app.core.auth import enforce_basic_auth_for_request
 from app.core.settings import settings
@@ -17,7 +17,7 @@ if sys.platform.startswith("win"):
     except Exception:
         pass
 
-app = FastAPI(title="Decision Maker Discovery Engine API")
+app = FastAPI(title="localcontacts.biz API")
 
 # Configure CORS
 origins = settings.resolved_cors_origins()
@@ -41,6 +41,10 @@ def startup() -> None:
     if "jobs" in inspector.get_table_names():
         existing = {c["name"] for c in inspector.get_columns("jobs")}
         missing: list[tuple[str, str]] = []
+        if "user_id" not in existing:
+            missing.append(("user_id", "TEXT"))
+        if "support_id" not in existing:
+            missing.append(("support_id", "TEXT"))
         if "selected_platforms" not in existing:
             missing.append(("selected_platforms", "TEXT"))
         if "max_contacts_total" not in existing:
@@ -53,6 +57,26 @@ def startup() -> None:
             missing.append(("stop_reason", "TEXT"))
         if "options" not in existing:
             missing.append(("options", "TEXT"))
+        if "llm_calls_started" not in existing:
+            missing.append(("llm_calls_started", "INTEGER"))
+        if "llm_calls_succeeded" not in existing:
+            missing.append(("llm_calls_succeeded", "INTEGER"))
+        if "serper_calls" not in existing:
+            missing.append(("serper_calls", "INTEGER"))
+        if "llm_prompt_tokens" not in existing:
+            missing.append(("llm_prompt_tokens", "INTEGER"))
+        if "llm_completion_tokens" not in existing:
+            missing.append(("llm_completion_tokens", "INTEGER"))
+        if "llm_total_tokens" not in existing:
+            missing.append(("llm_total_tokens", "INTEGER"))
+        if "llm_cost_usd" not in existing:
+            missing.append(("llm_cost_usd", "REAL"))
+        if "serper_cost_usd" not in existing:
+            missing.append(("serper_cost_usd", "REAL"))
+        if "total_cost_usd" not in existing:
+            missing.append(("total_cost_usd", "REAL"))
+        if "cost_per_contact_usd" not in existing:
+            missing.append(("cost_per_contact_usd", "REAL"))
 
         if missing:
             with engine.begin() as conn:
@@ -62,6 +86,8 @@ def startup() -> None:
     if "decision_makers" in inspector.get_table_names():
         existing = {c["name"] for c in inspector.get_columns("decision_makers")}
         missing: list[tuple[str, str]] = []
+        if "user_id" not in existing:
+            missing.append(("user_id", "TEXT"))
         if "company_type" not in existing:
             missing.append(("company_type", "TEXT"))
         if "company_city" not in existing:
@@ -72,19 +98,17 @@ def startup() -> None:
             missing.append(("company_website", "TEXT"))
         if "uploaded_company_data" not in existing:
             missing.append(("uploaded_company_data", "TEXT"))
+        if "llm_input" not in existing:
+            missing.append(("llm_input", "TEXT"))
+        if "serper_queries" not in existing:
+            missing.append(("serper_queries", "TEXT"))
+        if "llm_output" not in existing:
+            missing.append(("llm_output", "TEXT"))
 
         if missing:
             with engine.begin() as conn:
                 for col, col_type in missing:
                     conn.execute(text(f"ALTER TABLE decision_makers ADD COLUMN {col} {col_type}"))
-
-    if "credit_state" in inspector.get_table_names():
-        with engine.begin() as conn:
-            row = conn.execute(text("SELECT id, balance FROM credit_state WHERE id = 1")).fetchone()
-            if row is None:
-                initial = int(os.getenv("CREDITS_INITIAL_BALANCE", "10000") or "10000")
-                conn.execute(text("INSERT INTO credit_state (id, balance) VALUES (1, :b)"), {"b": initial})
-
 
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
@@ -92,6 +116,9 @@ async def basic_auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     if request.method == "OPTIONS":
+        return await call_next(request)
+
+    if settings.supabase_url:
         return await call_next(request)
 
     try:
@@ -109,6 +136,9 @@ async def basic_auth_middleware(request: Request, call_next):
 # API Routes
 app.include_router(upload.router, prefix="/api", tags=["upload"])
 app.include_router(jobs.router, prefix="/api", tags=["jobs"])
+app.include_router(billing.router, prefix="/api", tags=["billing"])
+app.include_router(account.router, prefix="/api", tags=["account"])
+app.include_router(admin.router, prefix="/api", tags=["admin"])
 
 @app.get("/health")
 async def health_check():
@@ -144,4 +174,4 @@ else:
     # Fallback for local development (without dist)
     @app.get("/")
     async def read_root():
-        return {"message": "Decision Maker Discovery Engine API (Frontend not built/served)"}
+        return {"message": "localcontacts.biz API (Frontend not built/served)"}

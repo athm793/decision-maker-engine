@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Enum, JSON, Float
 from sqlalchemy.sql import func
 from app.core.database import Base
 import enum
+from uuid import uuid4
 
 class JobStatus(str, enum.Enum):
     QUEUED = "queued"
@@ -16,11 +17,23 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, index=True)
+    support_id = Column(String, index=True, default=lambda: uuid4().hex[:12].upper())
     filename = Column(String, index=True)
     status = Column(Enum(JobStatus), default=JobStatus.QUEUED)
     total_companies = Column(Integer, default=0)
     processed_companies = Column(Integer, default=0)
     decision_makers_found = Column(Integer, default=0)
+    llm_calls_started = Column(Integer, default=0)
+    llm_calls_succeeded = Column(Integer, default=0)
+    serper_calls = Column(Integer, default=0)
+    llm_prompt_tokens = Column(Integer, default=0)
+    llm_completion_tokens = Column(Integer, default=0)
+    llm_total_tokens = Column(Integer, default=0)
+    llm_cost_usd = Column(Float, default=0.0)
+    serper_cost_usd = Column(Float, default=0.0)
+    total_cost_usd = Column(Float, default=0.0)
+    cost_per_contact_usd = Column(Float, default=0.0)
     
     # Store the column mappings used for this job
     column_mappings = Column(JSON)

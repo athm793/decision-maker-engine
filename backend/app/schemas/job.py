@@ -15,19 +15,28 @@ class JobCreate(BaseModel):
     mappings: Dict[str, str]
     file_content: List[Dict[str, Any]] # Passing full content for now (MVP)
     selected_platforms: List[str] = ["linkedin"]
-    max_contacts_total: int = 50
-    max_contacts_per_company: int = 1
     deep_search: bool = False
-    seniorities: Optional[List[str]] = None
-    departments: Optional[List[str]] = None
+    job_titles: Optional[List[str]] = None
 
 class JobResponse(BaseModel):
     id: int
+    user_id: Optional[str] = None
+    support_id: Optional[str] = None
     filename: str
     status: JobStatus
     total_companies: int
     processed_companies: int
     decision_makers_found: int
+    llm_calls_started: Optional[int] = None
+    llm_calls_succeeded: Optional[int] = None
+    serper_calls: Optional[int] = None
+    llm_prompt_tokens: Optional[int] = None
+    llm_completion_tokens: Optional[int] = None
+    llm_total_tokens: Optional[int] = None
+    llm_cost_usd: Optional[float] = None
+    serper_cost_usd: Optional[float] = None
+    total_cost_usd: Optional[float] = None
+    cost_per_contact_usd: Optional[float] = None
     selected_platforms: Optional[List[str]] = None
     max_contacts_total: Optional[int] = None
     max_contacts_per_company: Optional[int] = None

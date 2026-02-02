@@ -4,6 +4,10 @@ __pycache__/
 *$py.class
 venv/
 .env
+.env.local
+.env.*
+!.env.example
+!.env.local.example
 
 # Node
 node_modules/

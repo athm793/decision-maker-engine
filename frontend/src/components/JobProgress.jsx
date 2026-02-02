@@ -34,24 +34,6 @@ export function JobProgress({ job, timerStartMs }) {
     return `${minutes}:${pad2(seconds)}`;
   }, [timerStartMs, tickMs]);
 
-  const formatPlatformName = (raw) => {
-    const v = String(raw || '').trim().toLowerCase();
-    const map = {
-      linkedin: 'LinkedIn',
-      google_maps: 'Google Maps',
-      facebook: 'Facebook',
-      instagram: 'Instagram',
-      yelp: 'Yelp',
-    };
-    return map[v] || (raw || '');
-  };
-
-  const platformsLabel = useMemo(() => {
-    const arr = Array.isArray(job.selected_platforms) ? job.selected_platforms : [];
-    if (arr.length === 0) return '—';
-    return arr.map(formatPlatformName).join(', ');
-  }, [job.selected_platforms]);
-
   const getStatusColor = (status) => {
     switch (status) {
       case 'processing': return 'text-[color:var(--accent)]';
@@ -73,79 +55,53 @@ export function JobProgress({ job, timerStartMs }) {
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-6 space-y-6">
-      <div className="mac-card p-6 mac-appear mac-hover-lift">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              <span className={getStatusColor(job.status)}>
-                {getStatusIcon(job.status)}
-              </span>
-              <span className="text-[color:var(--accent)]">Processing Job #{job.id}</span>
-            </h2>
-            <p className="mac-muted text-sm mt-1">
-              File: {job.filename}
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="text-2xl font-semibold flex items-baseline justify-end gap-2">
-              <span>{job.decision_makers_found}</span>
-              <span className="text-xs mac-muted uppercase tracking-wide">Found</span>
+    <div className="w-full max-w-6xl mx-auto px-6">
+      <div className="mac-card p-4 mac-appear mac-hover-lift">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={getStatusColor(job.status)}>{getStatusIcon(job.status)}</span>
+              <span className="text-sm font-semibold">Job #{job.id}</span>
+              <span className="text-xs mac-muted truncate">{job.filename}</span>
             </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
-          <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">
-            <div className="text-xs mac-muted uppercase tracking-wide">Platforms</div>
-            <div className="text-sm mt-1">
-              {platformsLabel}
-            </div>
-          </div>
-          <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">
-            <div className="text-xs mac-muted uppercase tracking-wide">Limits</div>
-            <div className="text-sm mt-1">
-              {job.max_contacts_total || '—'} total • {job.max_contacts_per_company || '—'} / company
-            </div>
-          </div>
-          <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">
-            <div className="text-xs mac-muted uppercase tracking-wide">Credits Spent</div>
-            <div className="text-sm mt-1">
-              {job.credits_spent ?? 0}
-            </div>
-            {job.stop_reason === 'credits_exhausted' && (
-              <div className="text-xs mt-1 mac-muted">Stopped: credits exhausted</div>
+            {!!job.support_id && (
+              <div className="mt-1 text-xs mac-muted">
+                Job ID: <span className="font-mono">{job.support_id}</span>
+              </div>
             )}
           </div>
-          <div className="bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-2xl p-3">
-            <div className="text-xs mac-muted uppercase tracking-wide">Elapsed</div>
-            <div className="text-sm mt-1">
-              {elapsedLabel}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="px-3 py-1 rounded-full bg-[color:var(--surface2)] border border-[color:var(--border)] text-xs">
+              <span className="font-semibold">{job.decision_makers_found}</span>
+              <span className="mac-muted"> found</span>
             </div>
           </div>
         </div>
 
-        {/* Progress Bar */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm mac-muted">
-            <span>Progress: {percentage}%</span>
-            <span>{job.processed_companies} / {job.total_companies} Companies</span>
-          </div>
-          <div className="h-3 bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-full overflow-hidden">
-            <div 
-              className={clsx(
-                "h-full transition-all duration-500 ease-out",
-                job.status === 'completed'
-                  ? "bg-[color:var(--accent)]"
-                  : job.status === 'failed'
-                    ? "bg-[color:var(--danger)]"
-                    : job.status === 'cancelled'
-                      ? "bg-[color:var(--muted)]"
-                      : "bg-[color:var(--accent)]"
-              )}
-              style={{ width: `${percentage}%` }}
-            />
-          </div>
+        <div className="mt-3 flex items-center justify-between text-xs mac-muted gap-3">
+          <span>{job.processed_companies} / {job.total_companies} companies</span>
+          <span>{percentage}%</span>
+          <span>Credits: {job.credits_spent ?? 0}</span>
+          <span>{elapsedLabel}</span>
+        </div>
+        {job.stop_reason === 'credits_exhausted' && (
+          <div className="mt-2 text-xs mac-muted">Stopped: credits exhausted</div>
+        )}
+
+        <div className="mt-3 h-2 bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-full overflow-hidden">
+          <div
+            className={clsx(
+              "h-full transition-all duration-500 ease-out",
+              job.status === 'completed'
+                ? "bg-[color:var(--accent)]"
+                : job.status === 'failed'
+                  ? "bg-[color:var(--danger)]"
+                  : job.status === 'cancelled'
+                    ? "bg-[color:var(--muted)]"
+                    : "bg-[color:var(--accent)]"
+            )}
+            style={{ width: `${percentage}%` }}
+          />
         </div>
       </div>
     </div>

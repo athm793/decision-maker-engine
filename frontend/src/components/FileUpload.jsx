@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { UploadCloud, FileType, AlertCircle } from 'lucide-react';
+import { UploadCloud, FileType } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 
 export function FileUpload({ onFileSelect, isUploading, error }) {
@@ -51,18 +51,12 @@ export function FileUpload({ onFileSelect, isUploading, error }) {
         </div>
       </div>
 
-      {error && (
-        <div className="mt-4 p-4 mac-card flex items-start gap-3 text-[color:var(--danger)]" style={{ background: 'color-mix(in srgb, var(--danger-weak) 60%, var(--surface))', borderColor: 'color-mix(in srgb, var(--danger) 35%, var(--border))' }}>
-          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          <p className="text-sm">{error}</p>
-        </div>
-      )}
+      {error && <div className="mt-4" />}
 
       {isUploading && (
         <div className="mt-6">
           <div className="flex justify-between text-sm mb-2 mac-muted">
-            <span>Uploading...</span>
-            <span>100%</span>
+            <span>Processing CSV…</span>
           </div>
           <div className="h-2 bg-[color:var(--surface2)] border border-[color:var(--border)] rounded-full overflow-hidden">
             <div className="h-full bg-[color:var(--accent)] animate-pulse w-full"></div>
