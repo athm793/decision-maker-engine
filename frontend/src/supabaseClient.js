@@ -25,7 +25,9 @@ export async function loadSupabaseConfig() {
         return cachedConfig;
       }
     }
-  } catch (_err) {
+  } catch {
+    cachedConfig = { url: '', anonKey: '', source: 'missing' };
+    return cachedConfig;
   }
 
   cachedConfig = { url: '', anonKey: '', source: 'missing' };

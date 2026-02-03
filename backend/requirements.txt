@@ -6,6 +6,7 @@ playwright
 openai
 python-dotenv
 sqlalchemy
+psycopg2-binary
 PyJWT[crypto]
 alembic
 requests

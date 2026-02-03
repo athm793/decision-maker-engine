@@ -13,7 +13,7 @@ from app.models.subscription import Subscription
 
 
 PLAN_MONTHLY_CREDITS: dict[str, int] = {
-    "trial": 500,
+    "trial": 20,
     "entry": 7250,
     "pro": 26000,
     "business": 80000,

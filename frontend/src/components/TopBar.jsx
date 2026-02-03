@@ -61,7 +61,7 @@ export function TopBar({
             onClick={() => setIsOpen(false)}
             aria-label="Close menu overlay"
           />
-          <div className="absolute right-4 top-4 w-[320px] max-w-[calc(100vw-2rem)] mac-panel mac-appear origin-top-right p-4">
+          <div className="fixed right-5 sm:right-6 lg:right-8 top-[72px] w-[320px] max-w-[calc(100vw-2.5rem)] mac-panel mac-appear origin-top-right p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold">{menuTitle || 'Menu'}</div>
               <button

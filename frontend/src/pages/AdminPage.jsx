@@ -7,7 +7,7 @@ import { useAppHistory } from '../navigation/AppHistoryProvider.jsx';
 import { TopBar } from '../components/TopBar';
 
 const PRICING_TIERS = [
-  { key: 'trial', name: 'Trial', price: 2, credits: 500 },
+  { key: 'trial', name: 'Trial', price: 1, credits: 20 },
   { key: 'entry', name: 'Entry', price: 29, credits: 7250 },
   { key: 'pro', name: 'Pro', price: 79, credits: 26000 },
   { key: 'business', name: 'Business', price: 199, credits: 80000 },
@@ -673,6 +673,12 @@ export function AdminPage() {
                                 Subscription {userSortKey === 'subscription_plan' ? (userSortDir === 'asc' ? '▲' : '▼') : ''}
                               </button>
                             </th>
+                            <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold">
+                              Signup IP
+                            </th>
+                            <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold">
+                              Last IP
+                            </th>
                             <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold text-right">
                               <button type="button" className="mac-link" onClick={() => toggleUserSort('user_total_cost_usd')}>
                                 User cost {userSortKey === 'user_total_cost_usd' ? (userSortDir === 'asc' ? '▲' : '▼') : ''}
@@ -704,6 +710,12 @@ export function AdminPage() {
                               <td className="px-4 py-3">
                                 <div className="text-xs mac-muted">{u.subscription_plan || 'free'}</div>
                               </td>
+                              <td className="px-4 py-3">
+                                <div className="text-xs mac-muted truncate max-w-[160px]">{u.signup_ip || '—'}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="text-xs mac-muted truncate max-w-[160px]">{u.last_ip || '—'}</div>
+                              </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="font-semibold">{fmtUsdCompact(u.user_total_cost_usd)}</div>
                               </td>
@@ -714,7 +726,7 @@ export function AdminPage() {
                           ))}
                           {sortedUsers.length === 0 && (
                             <tr>
-                              <td className="px-4 py-6 mac-muted text-sm" colSpan={6}>
+                              <td className="px-4 py-6 mac-muted text-sm" colSpan={8}>
                                 No users found.
                               </td>
                             </tr>

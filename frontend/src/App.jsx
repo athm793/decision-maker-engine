@@ -37,6 +37,7 @@ function App() {
   const [jobHistory, setJobHistory] = useState([]);
   const [isJobHistoryLoading, setIsJobHistoryLoading] = useState(false);
   const [creditsBalance, setCreditsBalance] = useState(null);
+  const [meRole, setMeRole] = useState(null);
   const jobStatus = job?.status;
   const [navBackStack, setNavBackStack] = useState([]);
   const [navForwardStack, setNavForwardStack] = useState([]);
@@ -187,6 +188,30 @@ function App() {
     interval = setInterval(fetchCredits, fast ? 2000 : 10000);
     return () => clearInterval(interval);
   }, [step, jobStatus]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!user) {
+      setMeRole(null);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    (async () => {
+      try {
+        const res = await axios.get('/api/me', { timeout: 10000 });
+        const role = String(res?.data?.role || '').toLowerCase();
+        if (isMounted) setMeRole(role || null);
+      } catch {
+        if (isMounted) setMeRole(null);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   const handleStopJob = async () => {
     if (!jobId || isCancelling) return;
@@ -571,13 +596,15 @@ function App() {
                 Credits: <span className="text-[var(--text)]">{typeof creditsBalance === 'number' ? creditsBalance : '—'}</span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className={'grid gap-2 ' + (meRole === 'admin' ? 'grid-cols-2' : 'grid-cols-1')}>
               <Link className="mac-btn px-3 py-2 text-xs text-center" to="/plans" onClick={close}>
                 Plans
               </Link>
-              <Link className="mac-btn px-3 py-2 text-xs text-center" to="/admin" onClick={close}>
-                Admin
-              </Link>
+              {meRole === 'admin' ? (
+                <Link className="mac-btn px-3 py-2 text-xs text-center" to="/admin" onClick={close}>
+                  Admin
+                </Link>
+              ) : null}
             </div>
             <button
               type="button"
@@ -606,7 +633,7 @@ function App() {
                 Find Local Decision Makers in Seconds
               </h1>
               <p className="text-base sm:text-lg mac-muted max-w-2xl mx-auto">
-                Upload your business list and let our AI agent find real decision makers with evidence.
+                Upload your business list and let our AI agent find real decision makers.
               </p>
             </div>
             

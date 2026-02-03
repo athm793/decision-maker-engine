@@ -14,4 +14,7 @@ class Profile(Base):
     last_name = Column(String)
     company_name = Column(String)
     role = Column(String, default="user")
+    signup_ip = Column(String)
+    last_ip = Column(String)
+    last_seen_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())

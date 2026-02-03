@@ -7,7 +7,7 @@ import { useAppHistory } from '../navigation/AppHistoryProvider.jsx';
 import { TopBar } from '../components/TopBar';
 
 const PLANS = [
-  { key: 'trial', name: 'Trial', price: 2, credits: 500, blurb: 'Quick test run' },
+  { key: 'trial', name: 'Trial', price: 1, credits: 20, blurb: 'Quick test run' },
   { key: 'entry', name: 'Entry', price: 29, credits: 7250, blurb: 'For light usage' },
   { key: 'pro', name: 'Pro', price: 79, credits: 26000, blurb: 'For consistent outreach' },
   { key: 'business', name: 'Business', price: 199, credits: 80000, blurb: 'For teams and scale' },

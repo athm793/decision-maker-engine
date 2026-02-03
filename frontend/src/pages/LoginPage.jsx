@@ -4,6 +4,74 @@ import { Link } from 'react-router-dom';
 import { getSupabaseClient, loadSupabaseConfig } from '../supabaseClient';
 import logoUrl from '../assets/logo.svg';
 
+const PERSONAL_EMAIL_DOMAINS = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'yahoo.co.uk',
+  'hotmail.com',
+  'outlook.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'aol.com',
+  'proton.me',
+  'protonmail.com',
+  'pm.me',
+  'gmx.com',
+  'gmx.net',
+  'mail.com',
+  'zoho.com',
+  'yandex.com',
+  'yandex.ru',
+]);
+
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  'mailinator.com',
+  'guerrillamail.com',
+  'guerrillamail.net',
+  'guerrillamail.org',
+  'sharklasers.com',
+  'grr.la',
+  '10minutemail.com',
+  '10minutemail.net',
+  'temp-mail.org',
+  'tempmailo.com',
+  'dispostable.com',
+  'trashmail.com',
+  'getnada.com',
+  'yopmail.com',
+  'yopmail.fr',
+  'yopmail.net',
+  'mohmal.com',
+]);
+
+const ADMIN_EMAIL_ALLOWLIST = new Set(
+  String(import.meta.env.VITE_ADMIN_EMAILS || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+const getEmailDomain = (rawEmail) => {
+  const email = String(rawEmail || '').trim().toLowerCase();
+  const at = email.lastIndexOf('@');
+  if (at <= 0) return '';
+  return email.slice(at + 1).trim();
+};
+
+const validateSignupEmail = (rawEmail) => {
+  const normalized = String(rawEmail || '').trim().toLowerCase();
+  if (ADMIN_EMAIL_ALLOWLIST.has(normalized)) return null;
+  const domain = getEmailDomain(rawEmail);
+  if (!domain) return 'Please enter a valid work email.';
+  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) return 'Temporary/disposable emails are not allowed. Please use a work email.';
+  if (PERSONAL_EMAIL_DOMAINS.has(domain)) return 'Please use a work email (no personal email domains).';
+  return null;
+};
+
 export function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -41,6 +109,8 @@ export function LoginPage() {
       if (mode === 'signup') {
         const signupEmail = (workEmail || '').trim();
         if (!signupEmail) throw new Error('Work email is required');
+        const signupError = validateSignupEmail(signupEmail);
+        if (signupError) throw new Error(signupError);
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: signupEmail,
           password,

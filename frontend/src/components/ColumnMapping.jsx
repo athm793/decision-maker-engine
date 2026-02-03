@@ -8,7 +8,7 @@ const REQUIRED_FIELDS = [
   { key: 'website', label: 'Company Website', required: false },
 ];
 
-export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice }) {
+export function ColumnMapping({ previewData, onConfirm, onCancel, notice }) {
   const [mappings, setMappings] = useState({});
   const [errors, setErrors] = useState([]);
   const [companyNameHint, setCompanyNameHint] = useState(null);
@@ -56,13 +56,6 @@ export function ColumnMapping({ previewData, onConfirm, onCancel, error, notice 
     if (values.length === 0) return 0;
     const urlCount = values.filter(isUrlLike).length;
     return urlCount / values.length;
-  };
-
-  const parseList = (raw) => {
-    return String(raw || '')
-      .split(/[\n,]+/g)
-      .map((s) => s.trim())
-      .filter(Boolean);
   };
 
   const addJobTitlesFromRaw = (raw) => {

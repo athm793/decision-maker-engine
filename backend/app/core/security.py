@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request
@@ -16,6 +17,100 @@ class CurrentUser:
     id: str
     email: str
     role: str
+
+
+def _normalize_email(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
+def _is_admin_email(email: str) -> bool:
+    normalized = _normalize_email(email)
+    if not normalized:
+        return False
+    return normalized in (settings.admin_emails or set())
+
+PERSONAL_EMAIL_DOMAINS: set[str] = {
+    "gmail.com",
+    "googlemail.com",
+    "yahoo.com",
+    "yahoo.co.uk",
+    "hotmail.com",
+    "outlook.com",
+    "live.com",
+    "msn.com",
+    "icloud.com",
+    "me.com",
+    "mac.com",
+    "aol.com",
+    "proton.me",
+    "protonmail.com",
+    "pm.me",
+    "gmx.com",
+    "gmx.net",
+    "mail.com",
+    "zoho.com",
+    "yandex.com",
+    "yandex.ru",
+}
+
+DISPOSABLE_EMAIL_DOMAINS: set[str] = {
+    "mailinator.com",
+    "guerrillamail.com",
+    "guerrillamail.net",
+    "guerrillamail.org",
+    "sharklasers.com",
+    "grr.la",
+    "10minutemail.com",
+    "10minutemail.net",
+    "temp-mail.org",
+    "tempmailo.com",
+    "dispostable.com",
+    "trashmail.com",
+    "getnada.com",
+    "yopmail.com",
+    "yopmail.fr",
+    "yopmail.net",
+    "mohmal.com",
+}
+
+
+def _email_domain(email: str) -> str:
+    e = _normalize_email(email)
+    at = e.rfind("@")
+    if at <= 0:
+        return ""
+    return e[at + 1 :].strip()
+
+
+def _validate_signup_email(email: str) -> str | None:
+    domain = _email_domain(email)
+    if not domain:
+        return "Invalid email"
+    if domain in DISPOSABLE_EMAIL_DOMAINS:
+        return "Temporary/disposable emails are not allowed"
+    if domain in PERSONAL_EMAIL_DOMAINS:
+        return "Personal emails are not allowed"
+    return None
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _get_request_ip(request: Request) -> str | None:
+    xff = (request.headers.get("x-forwarded-for") or "").strip()
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    xri = (request.headers.get("x-real-ip") or "").strip()
+    if xri:
+        return xri
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None) if client else None
+    if host:
+        return str(host).strip()
+    return None
 
 
 def _require_supabase_config() -> str:
@@ -64,6 +159,12 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+    app_meta = claims.get("app_metadata") or {}
+    if not isinstance(app_meta, dict):
+        app_meta = {}
+    claimed_role = str(app_meta.get("role") or "").strip().lower()
+    claim_is_admin = claimed_role == "admin"
+
     user_meta = claims.get("user_metadata") or {}
     if not isinstance(user_meta, dict):
         user_meta = {}
@@ -73,7 +174,14 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
     work_email = str(user_meta.get("work_email") or "").strip() or email
 
     profile = db.query(Profile).filter(Profile.id == user_id).first()
+    request_ip = _get_request_ip(request)
+    seen_at = _utcnow()
     if profile is None:
+        if not (_is_admin_email(email) or claim_is_admin):
+            detail = _validate_signup_email(email)
+            if detail:
+                raise HTTPException(status_code=400, detail=detail)
+        initial_role = "admin" if (_is_admin_email(email) or claim_is_admin) else "user"
         profile = Profile(
             id=user_id,
             email=email,
@@ -81,13 +189,19 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
             first_name=first_name,
             last_name=last_name,
             company_name=company_name,
-            role="user",
+            role=initial_role,
+            signup_ip=request_ip,
+            last_ip=request_ip,
+            last_seen_at=seen_at,
         )
         db.add(profile)
         db.commit()
         db.refresh(profile)
     else:
         changed = False
+        if (_is_admin_email(email) or claim_is_admin) and (profile.role or "").lower() != "admin":
+            profile.role = "admin"
+            changed = True
         if email and (profile.email or "") != email:
             profile.email = email
             changed = True
@@ -103,6 +217,21 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
         if company_name and (getattr(profile, "company_name", "") or "") != company_name:
             profile.company_name = company_name
             changed = True
+        if request_ip and (getattr(profile, "last_ip", "") or "") != request_ip:
+            profile.last_ip = request_ip
+            changed = True
+        prev_seen = getattr(profile, "last_seen_at", None)
+        if prev_seen is None:
+            profile.last_seen_at = seen_at
+            changed = True
+        else:
+            try:
+                if (seen_at - prev_seen).total_seconds() >= 60:
+                    profile.last_seen_at = seen_at
+                    changed = True
+            except Exception:
+                profile.last_seen_at = seen_at
+                changed = True
         if changed:
             db.commit()
 

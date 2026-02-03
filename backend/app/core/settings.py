@@ -15,6 +15,13 @@ def _getenv_bool(name: str, default: bool = False) -> bool:
         return default
     return raw.lower() in {"1", "true", "yes", "y", "on"}
 
+def _getenv_csv_set(name: str) -> set[str]:
+    raw = _getenv(name)
+    if raw is None:
+        return set()
+    parts = [p.strip().lower() for p in raw.split(",")]
+    return {p for p in parts if p}
+
 
 class Settings:
     def __init__(self) -> None:
@@ -63,6 +70,8 @@ class Settings:
         self.lemonsqueezy_variant_business = _getenv("LEMONSQUEEZY_VARIANT_BUSINESS")
         self.lemonsqueezy_variant_agency = _getenv("LEMONSQUEEZY_VARIANT_AGENCY")
         self.lemonsqueezy_variant_topup = _getenv("LEMONSQUEEZY_VARIANT_TOPUP")
+
+        self.admin_emails = _getenv_csv_set("ADMIN_EMAILS")
 
     @property
     def is_production(self) -> bool:

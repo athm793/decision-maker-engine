@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from app.api.endpoints import upload, jobs, billing, account, admin, public
 from app.core.database import engine, Base
+import app.models
 from app.core.auth import enforce_basic_auth_for_request
 from app.core.settings import settings
 import os
@@ -122,6 +123,12 @@ def startup() -> None:
             missing.append(("last_name", "TEXT"))
         if "company_name" not in existing:
             missing.append(("company_name", "TEXT"))
+        if "signup_ip" not in existing:
+            missing.append(("signup_ip", "TEXT"))
+        if "last_ip" not in existing:
+            missing.append(("last_ip", "TEXT"))
+        if "last_seen_at" not in existing:
+            missing.append(("last_seen_at", "TIMESTAMP"))
 
         if missing:
             with engine.begin() as conn:
