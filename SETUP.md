@@ -84,6 +84,24 @@ cd backend
 alembic -c alembic.ini upgrade head
 ```
 
+## 4.1) Supabase as the main DB (tables + analytics)
+
+If your `DATABASE_URL` points to Supabase Postgres, you can manage all user-level fields (role, credits, subscription, usage analytics) directly in Supabase.
+
+Run these SQL scripts in Supabase → SQL Editor (in this order):
+
+1) Create/upgrade all tables used by the app:
+
+- Open `backend/sql/supabase_schema.sql` in your editor, copy the full contents, and paste it into Supabase → SQL Editor → Run.
+
+2) Create the analytics view + credit helper:
+
+- Open `backend/sql/supabase_analytics.sql`, copy the full contents, and paste it into Supabase → SQL Editor → Run.
+
+Optional: auto-create a `public.profiles` row whenever a new Supabase Auth user is created:
+
+- Open `backend/sql/supabase_auth_profile_trigger.sql`, copy the full contents, and paste it into Supabase → SQL Editor → Run.
+
 ## 5) Lemon Squeezy
 
 ### 5.1 Products / variants
@@ -109,7 +127,7 @@ The webhook signature is sent in `X-Signature` and must be verified using the ra
 
 ## 6) Admin access
 
-- Log in once so your profile row is created.
-- Set `profiles.role = 'admin'` for your user id.
+- Recommended: set `ADMIN_EMAILS=you@domain.com` (comma-separated) in backend env to auto-promote admins by email.
+- Log in once so your `profiles` row is created.
+- In Supabase Table Editor or SQL Editor, set `profiles.role = 'admin'` for your user.
 - Visit `/admin` in the frontend.
-
