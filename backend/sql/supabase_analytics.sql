@@ -1,4 +1,6 @@
-create or replace view public.user_analytics as
+drop view if exists public.user_analytics;
+
+create view public.user_analytics as
 select
   p.id as user_id,
   p.email,
@@ -111,4 +113,3 @@ begin
   return coalesce(v_balance, 0);
 end;
 $$;
-

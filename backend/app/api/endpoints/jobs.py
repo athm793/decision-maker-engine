@@ -728,12 +728,21 @@ async def _process_job_task(job_id: int):
                     name_candidate = _text(res.get("name"))
                     if not name_candidate or name_candidate.strip().lower() in {"unknown", "n/a", "na", "-"}:
                         continue
+                    
+                    # Filter out common hallucinations
+                    if name_candidate.strip().lower() in {"john doe", "jane doe"}:
+                        continue
+                    
+                    prof_url = _text(res.get("profile_url")).lower()
+                    if "linkedin.com/in/johndoe" in prof_url or "linkedin.com/in/janedoe" in prof_url:
+                        continue
+
                     if isinstance(res, dict):
                         valid_results.append(res)
 
                 if is_usable_company:
                     try:
-                        spend_credits_for_job(db, user_id=job.user_id, amount=credits_per_company, job_id=job.id)
+                        spend_credits_for_job(db, user_id=job.user_id, amount=credits_per_company, job_id=job.id, commit=False)
                     except Exception:
                         job.stop_reason = "credits_exhausted"
                         job.status = JobStatus.COMPLETED
@@ -822,7 +831,7 @@ async def _process_job_task(job_id: int):
                         platform=platform_out,
                         profile_url=_text(res.get("profile_url")),
                         emails_found=emails_out,
-                        confidence_score=res.get("confidence"),
+                        confidence_score=str(res.get("confidence") or "").strip().upper() or "UNKNOWN",
                         uploaded_company_data=json.dumps(company, ensure_ascii=False),
                         llm_input=llm_input,
                         serper_queries=serper_queries,
@@ -834,7 +843,6 @@ async def _process_job_task(job_id: int):
                     job.decision_makers_found += 1
 
                 job.processed_companies += 1
-                db.commit()
                 logger.info(
                     "process_job_task.company_done job_id=%s idx=%s processed_companies=%s decision_makers_found=%s credits_spent=%s",
                     job_id,
@@ -843,6 +851,9 @@ async def _process_job_task(job_id: int):
                     job.decision_makers_found,
                     job.credits_spent,
                 )
+            
+            db.commit()
+
             if abort_job:
                 break
             
@@ -1046,6 +1057,11 @@ async def get_job_results(job_id: int, db: Session = Depends(get_db), current_us
             DecisionMaker.name.isnot(None),
             DecisionMaker.name != "",
             DecisionMaker.name != "Unknown",
+            func.upper(DecisionMaker.confidence_score) != "LOW",
+            func.lower(DecisionMaker.name) != "john doe",
+            func.lower(DecisionMaker.name) != "jane doe",
+            ~func.coalesce(DecisionMaker.profile_url, "").ilike("%linkedin.com/in/johndoe%"),
+            ~func.coalesce(DecisionMaker.profile_url, "").ilike("%linkedin.com/in/janedoe%"),
         )
         .order_by(DecisionMaker.id.asc())
         .all()
@@ -1078,6 +1094,11 @@ async def get_job_results_paged(
         DecisionMaker.name.isnot(None),
         DecisionMaker.name != "",
         DecisionMaker.name != "Unknown",
+        func.upper(DecisionMaker.confidence_score) != "LOW",
+        func.lower(DecisionMaker.name) != "john doe",
+        func.lower(DecisionMaker.name) != "jane doe",
+        ~func.coalesce(DecisionMaker.profile_url, "").ilike("%linkedin.com/in/johndoe%"),
+        ~func.coalesce(DecisionMaker.profile_url, "").ilike("%linkedin.com/in/janedoe%"),
     )
 
     if q:
@@ -1124,6 +1145,11 @@ async def download_job_results_csv(
         DecisionMaker.name.isnot(None),
         DecisionMaker.name != "",
         DecisionMaker.name != "Unknown",
+        func.upper(DecisionMaker.confidence_score) != "LOW",
+        func.lower(DecisionMaker.name) != "john doe",
+        func.lower(DecisionMaker.name) != "jane doe",
+        ~func.coalesce(DecisionMaker.profile_url, "").ilike("%linkedin.com/in/johndoe%"),
+        ~func.coalesce(DecisionMaker.profile_url, "").ilike("%linkedin.com/in/janedoe%"),
     )
 
     if q:

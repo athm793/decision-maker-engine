@@ -115,6 +115,7 @@ def spend_credits_for_job(
     job_id: int,
     source: str = "job",
     now: datetime | None = None,
+    commit: bool = True,
 ) -> None:
     now = now or utcnow()
     amount = int(amount)
@@ -167,4 +168,5 @@ def spend_credits_for_job(
         raise ValueError("insufficient_credits")
 
     acct.balance = int(acct.balance or 0) - amount
-    db.commit()
+    if commit:
+        db.commit()
