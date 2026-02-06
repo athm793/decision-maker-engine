@@ -851,11 +851,10 @@ async def _process_job_task(job_id: int):
                     job.decision_makers_found,
                     job.credits_spent,
                 )
-            
-            db.commit()
+                db.commit()
 
-            if abort_job:
-                break
+                if abort_job:
+                    break
             
         if job.status == JobStatus.PROCESSING:
             job.status = JobStatus.COMPLETED
@@ -880,39 +879,7 @@ async def _process_job_task(job_id: int):
         await scraper.stop()
         db.close()
 
-def _run_job_task_in_dedicated_loop(job_id: int) -> None:
-    old_policy = None
-    if sys.platform.startswith("win"):
-        try:
-            old_policy = asyncio.get_event_loop_policy()
-        except Exception:
-            old_policy = None
-        try:
-            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        except Exception:
-            pass
-
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(_process_job_task(job_id))
-        loop.run_until_complete(loop.shutdown_asyncgens())
-    finally:
-        try:
-            asyncio.set_event_loop(None)
-        except Exception:
-            pass
-        loop.close()
-        if old_policy is not None:
-            try:
-                asyncio.set_event_loop_policy(old_policy)
-            except Exception:
-                pass
-
 async def process_job_task(job_id: int):
-    if sys.platform.startswith("win"):
-        await asyncio.to_thread(_run_job_task_in_dedicated_loop, job_id)
-        return
     await _process_job_task(job_id)
 
 @router.post("/jobs", response_model=JobResponse)

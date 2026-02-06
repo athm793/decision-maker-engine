@@ -84,10 +84,13 @@ function App() {
   useEffect(() => {
     let interval;
     if (step === 'processing' && jobId) {
+      let inFlight = false;
       const fetchJobStatus = async () => {
+        if (inFlight) return;
+        inFlight = true;
         try {
           console.log('[poll job] GET /api/jobs/%s', jobId);
-          const jobRes = await axios.get(`/api/jobs/${jobId}`);
+          const jobRes = await axios.get(`/api/jobs/${jobId}`, { timeout: 60000 });
 
           setJob(jobRes.data);
 
@@ -96,9 +99,12 @@ function App() {
           }
         } catch (err) {
           console.error("Error polling job:", err);
+          if (err?.code === 'ECONNABORTED') return;
           const status = err?.response?.status;
           const detail = err?.response?.data?.detail;
           setError((status ? `Error polling job (${status}). ` : 'Error polling job. ') + (detail || err?.message || ''));
+        } finally {
+          inFlight = false;
         }
       };
 
@@ -115,9 +121,12 @@ function App() {
 
   useEffect(() => {
     let interval;
+    let inFlight = false;
 
     const fetchResults = async () => {
       if (!jobId) return;
+      if (inFlight) return;
+      inFlight = true;
       setIsResultsLoading(true);
       try {
         console.log('[poll results] GET /api/jobs/%s/results/paged', jobId);
@@ -127,6 +136,7 @@ function App() {
             limit: resultsLimit,
             offset: resultsOffset,
           },
+          timeout: 60000,
         });
 
         setResults(response.data.items);
@@ -135,6 +145,7 @@ function App() {
         console.error('Error fetching results:', err);
       } finally {
         setIsResultsLoading(false);
+        inFlight = false;
       }
     };
 

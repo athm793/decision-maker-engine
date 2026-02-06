@@ -236,79 +236,91 @@ async def lemonsqueezy_webhook(request: Request, db: Session = Depends(get_db)) 
     attrs = data.get("attributes") or {}
 
     if event_name in {"subscription_created", "subscription_updated", "subscription_cancelled", "subscription_expired"}:
-        subscription_id = data_id
-        variant_id = (attrs.get("variant_id") if isinstance(attrs, dict) else None)
-        plan_key = str(custom_data.get("plan_key") or "").strip().lower() or (_plan_key_from_variant_id(variant_id) or "")
-        status = str((attrs.get("status") if isinstance(attrs, dict) else "") or "")
-        current_period_end = _parse_iso8601((attrs.get("renews_at") if isinstance(attrs, dict) else None))
-        sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
-        if sub is None:
-            sub = Subscription(user_id=user_id, plan_key=plan_key or None, status=status or None)
-            db.add(sub)
-            db.commit()
-            db.refresh(sub)
+        try:
+            subscription_id = data_id
+            variant_id = (attrs.get("variant_id") if isinstance(attrs, dict) else None)
+            plan_key = str(custom_data.get("plan_key") or "").strip().lower() or (_plan_key_from_variant_id(variant_id) or "")
+            status = str((attrs.get("status") if isinstance(attrs, dict) else "") or "")
+            current_period_end = _parse_iso8601((attrs.get("renews_at") if isinstance(attrs, dict) else None))
+            sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
+            if sub is None:
+                sub = Subscription(user_id=user_id, plan_key=plan_key or None, status=status or None)
+                db.add(sub)
+                db.commit()
+                db.refresh(sub)
 
-        sub.plan_key = plan_key or sub.plan_key
-        sub.status = status or sub.status
-        sub.current_period_end = current_period_end or sub.current_period_end
-        sub.provider = "lemonsqueezy"
-        sub.provider_subscription_id = subscription_id or sub.provider_subscription_id
-        sub.provider_customer_id = str(attrs.get("customer_id") or "") if isinstance(attrs, dict) else sub.provider_customer_id
-        sub.provider_order_id = str(attrs.get("order_id") or "") if isinstance(attrs, dict) else sub.provider_order_id
-        db.commit()
+            sub.plan_key = plan_key or sub.plan_key
+            sub.status = status or sub.status
+            sub.current_period_end = current_period_end or sub.current_period_end
+            sub.provider = "lemonsqueezy"
+            sub.provider_subscription_id = subscription_id or sub.provider_subscription_id
+            sub.provider_customer_id = str(attrs.get("customer_id") or "") if isinstance(attrs, dict) else sub.provider_customer_id
+            sub.provider_order_id = str(attrs.get("order_id") or "") if isinstance(attrs, dict) else sub.provider_order_id
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
 
     if event_name == "subscription_payment_success":
-        invoice_id = data_id
-        sub_id = str((attrs.get("subscription_id") if isinstance(attrs, dict) else "") or "").strip()
-        if sub_id:
-            sub_data = _lemonsqueezy_get_subscription(sub_id)
-            sub_attrs = ((sub_data.get("data") or {}).get("attributes") or {})
-            renews_at = _parse_iso8601(sub_attrs.get("renews_at"))
-            plan_key = str(custom_data.get("plan_key") or "").strip().lower() or (_plan_key_from_variant_id(sub_attrs.get("variant_id")) or "")
-            source = f"lemonsqueezy_invoice:{invoice_id}"
-            already = db.query(CreditLedger).filter(CreditLedger.source == source, CreditLedger.user_id == user_id).first()
-            if already is None and renews_at and plan_key:
-                sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
-                if sub is None:
-                    sub = Subscription(user_id=user_id, plan_key=plan_key, status="active", current_period_end=renews_at)
-                    db.add(sub)
+        try:
+            invoice_id = data_id
+            sub_id = str((attrs.get("subscription_id") if isinstance(attrs, dict) else "") or "").strip()
+            if sub_id:
+                sub_data = _lemonsqueezy_get_subscription(sub_id)
+                sub_attrs = ((sub_data.get("data") or {}).get("attributes") or {})
+                renews_at = _parse_iso8601(sub_attrs.get("renews_at"))
+                plan_key = str(custom_data.get("plan_key") or "").strip().lower() or (_plan_key_from_variant_id(sub_attrs.get("variant_id")) or "")
+                source = f"lemonsqueezy_invoice:{invoice_id}"
+                already = db.query(CreditLedger).filter(CreditLedger.source == source, CreditLedger.user_id == user_id).first()
+                if already is None and renews_at and plan_key:
+                    sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
+                    if sub is None:
+                        sub = Subscription(user_id=user_id, plan_key=plan_key, status="active", current_period_end=renews_at)
+                        db.add(sub)
+                        db.commit()
+                        db.refresh(sub)
+                    sub.plan_key = plan_key
+                    sub.status = sub.status or "active"
+                    sub.current_period_end = renews_at
+                    sub.provider = "lemonsqueezy"
+                    sub.provider_subscription_id = sub_id
+                    sub.provider_customer_id = str(sub_attrs.get("customer_id") or "")
+                    sub.provider_order_id = str(sub_attrs.get("order_id") or "")
                     db.commit()
-                    db.refresh(sub)
-                sub.plan_key = plan_key
-                sub.status = sub.status or "active"
-                sub.current_period_end = renews_at
-                sub.provider = "lemonsqueezy"
-                sub.provider_subscription_id = sub_id
-                sub.provider_customer_id = str(sub_attrs.get("customer_id") or "")
-                sub.provider_order_id = str(sub_attrs.get("order_id") or "")
-                db.commit()
 
-                grant_monthly_credits(
-                    db,
-                    user_id=user_id,
-                    plan_key=plan_key,
-                    current_period_end=renews_at,
-                    source=source,
-                    metadata={"lemonsqueezy_invoice_id": invoice_id, "lemonsqueezy_subscription_id": sub_id},
-                )
+                    grant_monthly_credits(
+                        db,
+                        user_id=user_id,
+                        plan_key=plan_key,
+                        current_period_end=renews_at,
+                        source=source,
+                        metadata={"lemonsqueezy_invoice_id": invoice_id, "lemonsqueezy_subscription_id": sub_id},
+                    )
+        except Exception:
+            db.rollback()
+            raise
 
     if event_name == "order_created":
-        topup = str(custom_data.get("topup_credits") or "").strip()
-        if topup:
-            topup_credits = int(topup or 0)
-            if topup_credits > 0:
-                sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
-                if sub and (sub.plan_key or "").lower() in {"business", "agency"}:
-                    order_id = data_id
-                    source = f"lemonsqueezy_order:{order_id}"
-                    already = db.query(CreditLedger).filter(CreditLedger.source == source, CreditLedger.user_id == user_id).first()
-                    if already is None:
-                        grant_business_topup(
-                            db,
-                            user_id=user_id,
-                            credits=topup_credits,
-                            source=source,
-                            metadata={"lemonsqueezy_order_id": order_id},
-                        )
+        try:
+            topup = str(custom_data.get("topup_credits") or "").strip()
+            if topup:
+                topup_credits = int(topup or 0)
+                if topup_credits > 0:
+                    sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
+                    if sub and (sub.plan_key or "").lower() in {"business", "agency"}:
+                        order_id = data_id
+                        source = f"lemonsqueezy_order:{order_id}"
+                        already = db.query(CreditLedger).filter(CreditLedger.source == source, CreditLedger.user_id == user_id).first()
+                        if already is None:
+                            grant_business_topup(
+                                db,
+                                user_id=user_id,
+                                credits=topup_credits,
+                                source=source,
+                                metadata={"lemonsqueezy_order_id": order_id},
+                            )
+        except Exception:
+            db.rollback()
+            raise
 
     return {"received": True}

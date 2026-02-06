@@ -135,6 +135,13 @@ def startup() -> None:
                 for col, col_type in missing:
                     conn.execute(text(f"ALTER TABLE profiles ADD COLUMN {col} {col_type}"))
 
+    # Reset stuck jobs
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE jobs SET status = 'failed', stop_reason = 'server_restart' WHERE status = 'processing'"))
+    except Exception:
+        pass
+
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
     if request.url.path == "/health":

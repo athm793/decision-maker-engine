@@ -200,6 +200,12 @@ body {
     transition: box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease;
   }
 
+  .mac-input option,
+  .mac-input optgroup {
+    background: var(--bg);
+    color: var(--text);
+  }
+
   .mac-input:focus {
     border-color: color-mix(in srgb, var(--accent2) 60%, transparent);
     box-shadow: 0 0 0 4px var(--ring2), 0 0 0 1px var(--ring);

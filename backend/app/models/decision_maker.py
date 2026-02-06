@@ -7,7 +7,7 @@ class DecisionMaker(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id"))
+    job_id = Column(Integer, ForeignKey("jobs.id"), index=True)
     company_name = Column(String, index=True)
     company_type = Column(String)
     company_city = Column(String)

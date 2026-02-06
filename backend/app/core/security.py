@@ -226,14 +226,19 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
             changed = True
         else:
             try:
-                if (seen_at - prev_seen).total_seconds() >= 60:
+                if (seen_at - prev_seen).total_seconds() >= 600:
                     profile.last_seen_at = seen_at
                     changed = True
             except Exception:
                 profile.last_seen_at = seen_at
                 changed = True
         if changed:
-            db.commit()
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+                # Ignore presence update errors to keep API fast
+                pass
 
     return CurrentUser(id=profile.id, email=profile.email or "", role=profile.role or "user")
 
