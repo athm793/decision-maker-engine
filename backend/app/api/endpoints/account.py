@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import CurrentUser, get_current_user
+from app.core.security import CurrentUser, get_current_user, diagnose_current_user
 from app.models.coupon import CouponAssignment, CouponCode
 from app.models.credit_account import CreditAccount
 from app.models.credit_ledger import CreditLedger
@@ -65,6 +65,11 @@ async def me(db: Session = Depends(get_db), current_user: CurrentUser = Depends(
         credits_balance=int(balance),
         subscription=sub_out,
     )
+
+
+@router.get("/me/diagnostics")
+async def me_diagnostics(request: Request, db: Session = Depends(get_db)) -> dict:
+    return diagnose_current_user(request, db)
 
 
 @router.post("/coupons/redeem")

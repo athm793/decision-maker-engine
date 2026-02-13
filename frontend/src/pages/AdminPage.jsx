@@ -47,6 +47,7 @@ export function AdminPage() {
   const [simContactsPerCompany, setSimContactsPerCompany] = useState(1);
   const [simJobId, setSimJobId] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [isDiagLoading, setIsDiagLoading] = useState(false);
 
   const [adjustUserId, setAdjustUserId] = useState('');
   const [adjustDelta, setAdjustDelta] = useState(0);
@@ -125,6 +126,24 @@ export function AdminPage() {
 
   const hasMe = !!me;
   const isAdmin = (me?.role || '').toLowerCase() === 'admin';
+
+  const copyDiagnostics = async () => {
+    if (isDiagLoading) return;
+    setIsDiagLoading(true);
+    setError(null);
+    try {
+      const res = await axios.get('/api/me/diagnostics', { headers: authHeaders, timeout: 15000 });
+      const text = JSON.stringify(res?.data || {}, null, 2);
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+      setCellModal({ title: 'Admin diagnostics', content: text });
+    } catch (err) {
+      setError(err?.response?.data?.detail || err?.message || 'Failed to fetch diagnostics');
+    } finally {
+      setIsDiagLoading(false);
+    }
+  };
 
   const toggleUserSort = (key) => {
     setUserSortKey((prevKey) => {
@@ -560,6 +579,11 @@ export function AdminPage() {
         {hasMe && !isAdmin && (
           <div className="mac-panel p-5">
             <div className="text-sm text-[color:var(--danger)]">Admin access required.</div>
+            <div className="pt-3 flex flex-wrap gap-2">
+              <button type="button" className="mac-btn px-3 py-2 text-sm" onClick={copyDiagnostics}>
+                {isDiagLoading ? 'Checking…' : 'Copy diagnostics'}
+              </button>
+            </div>
           </div>
         )}
 

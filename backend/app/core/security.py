@@ -149,7 +149,41 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
 _SUPABASE_PROFILE_ROLE_CACHE = TTLCache(max_items=20000, ttl_s=60)
 
 
-def _fetch_profile_role_from_supabase(*, user_id: str, user_token: str) -> str | None:
+def _supabase_rest_profiles_role(
+    *,
+    supabase_url: str,
+    user_id: str,
+    api_key: str,
+    bearer: str,
+    timeout_s: float = 8,
+) -> tuple[int | None, str | None]:
+    try:
+        import requests
+
+        resp = requests.get(
+            f"{supabase_url}/rest/v1/profiles",
+            params={"select": "role", "id": f"eq.{user_id}"},
+            headers={
+                "apikey": api_key,
+                "authorization": f"Bearer {bearer}",
+                "accept": "application/json",
+            },
+            timeout=timeout_s,
+        )
+        status = int(resp.status_code)
+        if status != 200:
+            return (status, None)
+        rows = resp.json()
+        if not isinstance(rows, list) or not rows:
+            return (status, None)
+        role = rows[0].get("role") if isinstance(rows[0], dict) else None
+        role = str(role or "").strip().lower() or None
+        return (status, role)
+    except Exception:
+        return (None, None)
+
+
+def _fetch_profile_role_from_supabase_cached(*, user_id: str, user_token: str) -> str | None:
     supabase_url = (settings.supabase_url or "").strip().rstrip("/")
     if not supabase_url:
         return None
@@ -160,42 +194,126 @@ def _fetch_profile_role_from_supabase(*, user_id: str, user_token: str) -> str |
     cached = _SUPABASE_PROFILE_ROLE_CACHE.get(cache_key)
     if isinstance(cached, str):
         return cached or None
-    try:
-        import requests
-
-        bearer = (settings.supabase_service_role_key or user_token or "").strip()
-        if not bearer:
-            return None
-        resp = requests.get(
-            f"{supabase_url}/rest/v1/profiles",
-            params={"select": "role", "id": f"eq.{user_id}"},
-            headers={
-                "apikey": api_key,
-                "authorization": f"Bearer {bearer}",
-                "accept": "application/json",
-            },
-            timeout=8,
-        )
-        if resp.status_code != 200:
-            return None
-        rows = resp.json()
-        if not isinstance(rows, list) or not rows:
-            return None
-        role = rows[0].get("role") if isinstance(rows[0], dict) else None
-        role = str(role or "").strip().lower()
-        _SUPABASE_PROFILE_ROLE_CACHE.set(cache_key, role)
-        return role or None
-    except Exception:
+    bearer = (settings.supabase_service_role_key or user_token or "").strip()
+    if not bearer:
         return None
+    _status, role = _supabase_rest_profiles_role(
+        supabase_url=supabase_url,
+        user_id=user_id,
+        api_key=api_key,
+        bearer=bearer,
+        timeout_s=8,
+    )
+    if role:
+        _SUPABASE_PROFILE_ROLE_CACHE.set(cache_key, role)
+    return role or None
 
 
-def get_current_user(request: Request, db: Session = Depends(get_db)) -> CurrentUser:
+def _decide_role(
+    *,
+    email_is_admin: bool,
+    claim_is_admin: bool,
+    db_role: str | None,
+    supabase_role: str | None,
+) -> tuple[str, str]:
+    dbr = str(db_role or "").strip().lower()
+    if dbr == "admin":
+        return ("admin", "db_profile")
+    if email_is_admin:
+        return ("admin", "admin_emails")
+    if claim_is_admin:
+        return ("admin", "jwt_claim")
+    if str(supabase_role or "").strip().lower() == "admin":
+        return ("admin", "supabase_profiles")
+    if dbr:
+        return (dbr, "db_profile")
+    return ("user", "default")
+
+
+def _get_bearer_token(request: Request) -> str:
     auth = request.headers.get("authorization") or ""
     if not auth.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = auth.split(" ", 1)[1].strip()
     if not token:
         raise HTTPException(status_code=401, detail="Missing bearer token")
+    return token
+
+
+def diagnose_current_user(request: Request, db: Session) -> dict[str, Any]:
+    token = _get_bearer_token(request)
+    claims = _decode_supabase_jwt(token)
+    user_id = str(claims.get("sub") or "").strip()
+    email = str(claims.get("email") or "").strip()
+
+    app_meta = claims.get("app_metadata") or {}
+    if not isinstance(app_meta, dict):
+        app_meta = {}
+    claimed_role = str(app_meta.get("role") or "").strip().lower()
+    top_level_role = str(claims.get("role") or "").strip().lower()
+    claim_is_admin = claimed_role == "admin" or top_level_role == "admin"
+
+    profile = db.query(Profile).filter(Profile.id == user_id).first()
+    db_role = str((getattr(profile, "role", None) if profile else None) or "").strip().lower() or None
+
+    supabase_url = (settings.supabase_url or "").strip().rstrip("/")
+    api_key = (settings.supabase_service_role_key or settings.supabase_anon_key or "").strip()
+    bearer = (settings.supabase_service_role_key or token or "").strip()
+
+    supabase_status = None
+    supabase_role = None
+    if supabase_url and api_key and bearer and user_id:
+        supabase_status, supabase_role = _supabase_rest_profiles_role(
+            supabase_url=supabase_url,
+            user_id=user_id,
+            api_key=api_key,
+            bearer=bearer,
+            timeout_s=8,
+        )
+
+    email_is_admin = _is_admin_email(email)
+    decided_role, decided_reason = _decide_role(
+        email_is_admin=email_is_admin,
+        claim_is_admin=claim_is_admin,
+        db_role=db_role,
+        supabase_role=supabase_role,
+    )
+
+    return {
+        "user_id": user_id,
+        "email": email,
+        "config": {
+            "has_supabase_url": bool(supabase_url),
+            "has_supabase_anon_key": bool(settings.supabase_anon_key),
+            "has_supabase_service_role_key": bool(settings.supabase_service_role_key),
+            "supabase_jwt_aud": settings.supabase_jwt_audience,
+            "supabase_jwt_issuer": settings.supabase_jwt_issuer,
+        },
+        "jwt": {
+            "role": top_level_role,
+            "app_metadata_role": claimed_role,
+        },
+        "db_profile": {
+            "exists": bool(profile),
+            "role": db_role,
+        },
+        "supabase_profiles": {
+            "attempted": bool(supabase_url and api_key and bearer and user_id),
+            "status": supabase_status,
+            "role": supabase_role,
+            "used_service_role_key": bool(settings.supabase_service_role_key),
+        },
+        "decision": {
+            "role": decided_role,
+            "reason": decided_reason,
+            "email_is_admin": email_is_admin,
+            "claim_is_admin": claim_is_admin,
+        },
+    }
+
+
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> CurrentUser:
+    token = _get_bearer_token(request)
 
     claims = _decode_supabase_jwt(token)
     user_id = str(claims.get("sub") or "").strip()
@@ -219,19 +337,24 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
     work_email = str(user_meta.get("work_email") or "").strip() or email
 
     profile = db.query(Profile).filter(Profile.id == user_id).first()
+    email_is_admin = _is_admin_email(email)
     remote_role: str | None = None
-    if not (_is_admin_email(email) or claim_is_admin):
-        local_role = str((profile.role if profile else "") or "").strip().lower()
-        if not local_role or local_role != "admin":
-            remote_role = _fetch_profile_role_from_supabase(user_id=user_id, user_token=token)
+    local_role = str((profile.role if profile else "") or "").strip().lower()
+    if local_role != "admin" and not (email_is_admin or claim_is_admin):
+        remote_role = _fetch_profile_role_from_supabase_cached(user_id=user_id, user_token=token)
     request_ip = _get_request_ip(request)
     seen_at = _utcnow()
     if profile is None:
-        if not (_is_admin_email(email) or claim_is_admin):
+        if not (email_is_admin or claim_is_admin):
             detail = _validate_signup_email(email)
             if detail:
                 raise HTTPException(status_code=400, detail=detail)
-        initial_role = "admin" if (_is_admin_email(email) or claim_is_admin or remote_role == "admin") else (remote_role or "user")
+        initial_role, _reason = _decide_role(
+            email_is_admin=email_is_admin,
+            claim_is_admin=claim_is_admin,
+            db_role=None,
+            supabase_role=remote_role,
+        )
         profile = Profile(
             id=user_id,
             email=email,
@@ -249,14 +372,14 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
         db.refresh(profile)
     else:
         changed = False
-        if (_is_admin_email(email) or claim_is_admin) and (profile.role or "").lower() != "admin":
-            profile.role = "admin"
-            changed = True
-        elif remote_role == "admin" and (profile.role or "").lower() != "admin":
-            profile.role = "admin"
-            changed = True
-        elif remote_role and (profile.role or "").lower() != remote_role:
-            profile.role = remote_role
+        next_role, _reason = _decide_role(
+            email_is_admin=email_is_admin,
+            claim_is_admin=claim_is_admin,
+            db_role=getattr(profile, "role", None),
+            supabase_role=remote_role,
+        )
+        if next_role and (profile.role or "").strip().lower() != next_role:
+            profile.role = next_role
             changed = True
         if email and (profile.email or "") != email:
             profile.email = email

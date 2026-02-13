@@ -128,6 +128,11 @@ The webhook signature is sent in `X-Signature` and must be verified using the ra
 ## 6) Admin access
 
 - Recommended: set `ADMIN_EMAILS=you@domain.com` (comma-separated) in backend env to auto-promote admins by email.
+- Alternative: set `public.profiles.role = 'admin'` for your user in Supabase.
+  - If your backend `DATABASE_URL` points to Supabase Postgres, the backend will read it directly.
+  - If your backend uses SQLite, set `SUPABASE_SERVICE_ROLE_KEY` in backend env so it can read `profiles.role` via Supabase REST (this bypasses RLS).
 - Log in once so your `profiles` row is created.
-- In Supabase Table Editor or SQL Editor, set `profiles.role = 'admin'` for your user.
 - Visit `/admin` in the frontend.
+
+Troubleshooting:
+- If the admin panel does not show up, open `/admin` and click “Copy diagnostics”, or call `GET /api/me/diagnostics` with your bearer token. The response shows exactly which role source is being used.
