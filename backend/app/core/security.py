@@ -145,6 +145,38 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="Invalid bearer token")
 
 
+def _fetch_profile_role_from_supabase(*, user_id: str, token: str) -> str | None:
+    supabase_url = (settings.supabase_url or "").strip().rstrip("/")
+    if not supabase_url:
+        return None
+    anon_key = (settings.supabase_anon_key or "").strip()
+    if not anon_key:
+        return None
+    try:
+        import requests
+
+        resp = requests.get(
+            f"{supabase_url}/rest/v1/profiles",
+            params={"select": "role", "id": f"eq.{user_id}"},
+            headers={
+                "apikey": anon_key,
+                "authorization": f"Bearer {token}",
+                "accept": "application/json",
+            },
+            timeout=8,
+        )
+        if resp.status_code != 200:
+            return None
+        rows = resp.json()
+        if not isinstance(rows, list) or not rows:
+            return None
+        role = rows[0].get("role") if isinstance(rows[0], dict) else None
+        role = str(role or "").strip().lower()
+        return role or None
+    except Exception:
+        return None
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> CurrentUser:
     auth = request.headers.get("authorization") or ""
     if not auth.lower().startswith("bearer "):
@@ -163,7 +195,11 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
     if not isinstance(app_meta, dict):
         app_meta = {}
     claimed_role = str(app_meta.get("role") or "").strip().lower()
-    claim_is_admin = claimed_role == "admin"
+    top_level_role = str(claims.get("role") or "").strip().lower()
+    claim_is_admin = claimed_role == "admin" or top_level_role == "admin"
+    remote_role: str | None = None
+    if settings.database_url.startswith("sqlite"):
+        remote_role = _fetch_profile_role_from_supabase(user_id=user_id, token=token)
 
     user_meta = claims.get("user_metadata") or {}
     if not isinstance(user_meta, dict):
@@ -181,7 +217,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
             detail = _validate_signup_email(email)
             if detail:
                 raise HTTPException(status_code=400, detail=detail)
-        initial_role = "admin" if (_is_admin_email(email) or claim_is_admin) else "user"
+        initial_role = "admin" if (_is_admin_email(email) or claim_is_admin or remote_role == "admin") else (remote_role or "user")
         profile = Profile(
             id=user_id,
             email=email,
@@ -201,6 +237,9 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
         changed = False
         if (_is_admin_email(email) or claim_is_admin) and (profile.role or "").lower() != "admin":
             profile.role = "admin"
+            changed = True
+        elif remote_role and (profile.role or "").lower() != remote_role:
+            profile.role = remote_role
             changed = True
         if email and (profile.email or "") != email:
             profile.email = email
