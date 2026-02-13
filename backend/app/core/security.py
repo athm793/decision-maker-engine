@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.settings import settings
 from app.models.profile import Profile
+from app.services.cache import TTLCache
 
 
 @dataclass(frozen=True)
@@ -145,22 +146,32 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="Invalid bearer token")
 
 
-def _fetch_profile_role_from_supabase(*, user_id: str, token: str) -> str | None:
+_SUPABASE_PROFILE_ROLE_CACHE = TTLCache(max_items=20000, ttl_s=60)
+
+
+def _fetch_profile_role_from_supabase(*, user_id: str, user_token: str) -> str | None:
     supabase_url = (settings.supabase_url or "").strip().rstrip("/")
     if not supabase_url:
         return None
-    anon_key = (settings.supabase_anon_key or "").strip()
-    if not anon_key:
+    api_key = (settings.supabase_service_role_key or settings.supabase_anon_key or "").strip()
+    if not api_key:
         return None
+    cache_key = f"supabase_profile_role:{user_id}"
+    cached = _SUPABASE_PROFILE_ROLE_CACHE.get(cache_key)
+    if isinstance(cached, str):
+        return cached or None
     try:
         import requests
 
+        bearer = (settings.supabase_service_role_key or user_token or "").strip()
+        if not bearer:
+            return None
         resp = requests.get(
             f"{supabase_url}/rest/v1/profiles",
             params={"select": "role", "id": f"eq.{user_id}"},
             headers={
-                "apikey": anon_key,
-                "authorization": f"Bearer {token}",
+                "apikey": api_key,
+                "authorization": f"Bearer {bearer}",
                 "accept": "application/json",
             },
             timeout=8,
@@ -172,6 +183,7 @@ def _fetch_profile_role_from_supabase(*, user_id: str, token: str) -> str | None
             return None
         role = rows[0].get("role") if isinstance(rows[0], dict) else None
         role = str(role or "").strip().lower()
+        _SUPABASE_PROFILE_ROLE_CACHE.set(cache_key, role)
         return role or None
     except Exception:
         return None
@@ -197,9 +209,6 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
     claimed_role = str(app_meta.get("role") or "").strip().lower()
     top_level_role = str(claims.get("role") or "").strip().lower()
     claim_is_admin = claimed_role == "admin" or top_level_role == "admin"
-    remote_role: str | None = None
-    if settings.database_url.startswith("sqlite"):
-        remote_role = _fetch_profile_role_from_supabase(user_id=user_id, token=token)
 
     user_meta = claims.get("user_metadata") or {}
     if not isinstance(user_meta, dict):
@@ -210,6 +219,11 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
     work_email = str(user_meta.get("work_email") or "").strip() or email
 
     profile = db.query(Profile).filter(Profile.id == user_id).first()
+    remote_role: str | None = None
+    if not (_is_admin_email(email) or claim_is_admin):
+        local_role = str((profile.role if profile else "") or "").strip().lower()
+        if not local_role or local_role != "admin":
+            remote_role = _fetch_profile_role_from_supabase(user_id=user_id, user_token=token)
     request_ip = _get_request_ip(request)
     seen_at = _utcnow()
     if profile is None:
@@ -236,6 +250,9 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Current
     else:
         changed = False
         if (_is_admin_email(email) or claim_is_admin) and (profile.role or "").lower() != "admin":
+            profile.role = "admin"
+            changed = True
+        elif remote_role == "admin" and (profile.role or "").lower() != "admin":
             profile.role = "admin"
             changed = True
         elif remote_role and (profile.role or "").lower() != remote_role:
