@@ -44,9 +44,21 @@ class RedeemCouponRequest(BaseModel):
 
 @router.get("/me", response_model=MeResponse)
 async def me(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
-    balance = recalculate_effective_balance(db, current_user.id)
-    sub = db.query(Subscription).filter(Subscription.user_id == current_user.id).first()
-    profile = db.query(Profile).filter(Profile.id == current_user.id).first()
+    try:
+        balance = recalculate_effective_balance(db, current_user.id)
+    except Exception:
+        db.rollback()
+        balance = 0
+    try:
+        sub = db.query(Subscription).filter(Subscription.user_id == current_user.id).first()
+    except Exception:
+        db.rollback()
+        sub = None
+    try:
+        profile = db.query(Profile).filter(Profile.id == current_user.id).first()
+    except Exception:
+        db.rollback()
+        profile = None
     sub_out = None
     if sub is not None:
         sub_out = SubscriptionOut(
