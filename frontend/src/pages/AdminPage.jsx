@@ -641,37 +641,12 @@ export function AdminPage() {
 
             {activeTab === 'users' && (
               <>
+                {/* Users table */}
                 <div className="mac-panel p-5 space-y-3">
-                  <div className="text-lg font-semibold">Adjust user credits</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                    <input value={adjustUserId} onChange={(e) => setAdjustUserId(e.target.value)} placeholder="User ID" className="mac-input px-3 py-2 text-sm" />
-                    <input type="number" value={adjustDelta} onChange={(e) => setAdjustDelta(Number(e.target.value))} placeholder="Delta" className="mac-input px-3 py-2 text-sm" />
-                    <input
-                      type="number"
-                      value={adjustSetBalance}
-                      onChange={(e) => setAdjustSetBalance(Number(e.target.value))}
-                      placeholder="Set balance to"
-                      className="mac-input px-3 py-2 text-sm"
-                    />
-                    <input value={adjustExpiresDays} onChange={(e) => setAdjustExpiresDays(e.target.value)} placeholder="Expires days (optional)" className="mac-input px-3 py-2 text-sm" />
-                    <input value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} placeholder="Reason" className="mac-input px-3 py-2 text-sm" />
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-lg font-semibold">Users</div>
+                    <div className="text-xs mac-muted">Click a row to select · click again to deselect</div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button className="mac-btn mac-btn-primary px-4 py-2 text-sm" disabled={isBusy || !adjustUserId.trim() || !adjustDelta} onClick={handleAdjust}>
-                      Apply delta
-                    </button>
-                    <button
-                      className="mac-btn px-4 py-2 text-sm"
-                      disabled={isBusy || !adjustUserId.trim() || !Number.isFinite(Number(adjustSetBalance))}
-                      onClick={handleSetBalance}
-                    >
-                      Set balance
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mac-panel p-5 space-y-3">
-                  <div className="text-lg font-semibold">Users</div>
                   <div className="mac-card overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm text-left">
@@ -683,29 +658,13 @@ export function AdminPage() {
                               </button>
                             </th>
                             <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold">
-                              <button type="button" className="mac-link" onClick={() => toggleUserSort('id')}>
-                                User ID {userSortKey === 'id' ? (userSortDir === 'asc' ? '▲' : '▼') : ''}
-                              </button>
-                            </th>
-                            <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold">
                               <button type="button" className="mac-link" onClick={() => toggleUserSort('role')}>
                                 Role {userSortKey === 'role' ? (userSortDir === 'asc' ? '▲' : '▼') : ''}
                               </button>
                             </th>
                             <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold">
                               <button type="button" className="mac-link" onClick={() => toggleUserSort('subscription_plan')}>
-                                Subscription {userSortKey === 'subscription_plan' ? (userSortDir === 'asc' ? '▲' : '▼') : ''}
-                              </button>
-                            </th>
-                            <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold">
-                              Signup IP
-                            </th>
-                            <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold">
-                              Last IP
-                            </th>
-                            <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold text-right">
-                              <button type="button" className="mac-link" onClick={() => toggleUserSort('user_total_cost_usd')}>
-                                User cost {userSortKey === 'user_total_cost_usd' ? (userSortDir === 'asc' ? '▲' : '▼') : ''}
+                                Plan {userSortKey === 'subscription_plan' ? (userSortDir === 'asc' ? '▲' : '▼') : ''}
                               </button>
                             </th>
                             <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold text-right">
@@ -713,20 +672,30 @@ export function AdminPage() {
                                 Credits {userSortKey === 'credits_balance' ? (userSortDir === 'asc' ? '▲' : '▼') : ''}
                               </button>
                             </th>
+                            <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold text-right">
+                              <button type="button" className="mac-link" onClick={() => toggleUserSort('user_total_cost_usd')}>
+                                Cost {userSortKey === 'user_total_cost_usd' ? (userSortDir === 'asc' ? '▲' : '▼') : ''}
+                              </button>
+                            </th>
+                            <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold">Signup IP</th>
+                            <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold">Last IP</th>
+                            <th className="px-4 py-3 border-b border-[color:var(--border)] font-semibold"></th>
                           </tr>
                         </thead>
                         <tbody>
                           {sortedUsers.map((u) => (
                             <tr
                               key={u.id}
-                              className="border-b border-[color:var(--border)] hover:bg-[color:var(--surface2)]/60 cursor-pointer"
-                              onClick={() => setAdjustUserId(u.id)}
+                              className={`border-b border-[color:var(--border)] cursor-pointer transition-colors ${
+                                adjustUserId === u.id
+                                  ? 'bg-[color:var(--accent)]/10'
+                                  : 'hover:bg-[color:var(--surface2)]/60'
+                              }`}
+                              onClick={() => setAdjustUserId(adjustUserId === u.id ? '' : u.id)}
                             >
                               <td className="px-4 py-3">
-                                <div className="font-semibold truncate max-w-[320px]">{u.email || '—'}</div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="text-xs mac-muted truncate max-w-[420px]">{u.id}</div>
+                                <div className="font-semibold truncate max-w-[260px]">{u.email || '—'}</div>
+                                <div className="text-xs mac-muted font-mono truncate max-w-[260px] pt-0.5">{u.id}</div>
                               </td>
                               <td className="px-4 py-3">
                                 <div className="text-xs mac-muted">{u.role}</div>
@@ -734,25 +703,36 @@ export function AdminPage() {
                               <td className="px-4 py-3">
                                 <div className="text-xs mac-muted">{u.subscription_plan || 'free'}</div>
                               </td>
-                              <td className="px-4 py-3">
-                                <div className="text-xs mac-muted truncate max-w-[160px]">{u.signup_ip || '—'}</div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="text-xs mac-muted truncate max-w-[160px]">{u.last_ip || '—'}</div>
+                              <td className="px-4 py-3 text-right">
+                                <div className="font-semibold">{u.credits_balance.toLocaleString()}</div>
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="font-semibold">{fmtUsdCompact(u.user_total_cost_usd)}</div>
                               </td>
-                              <td className="px-4 py-3 text-right">
-                                <div className="font-semibold">{u.credits_balance}</div>
+                              <td className="px-4 py-3">
+                                <div className="text-xs mac-muted truncate max-w-[140px]">{u.signup_ip || '—'}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="text-xs mac-muted truncate max-w-[140px]">{u.last_ip || '—'}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <button
+                                  type="button"
+                                  className="mac-btn px-2 py-1 text-xs"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigator?.clipboard?.writeText(u.id);
+                                  }}
+                                  title="Copy user ID"
+                                >
+                                  Copy ID
+                                </button>
                               </td>
                             </tr>
                           ))}
                           {sortedUsers.length === 0 && (
                             <tr>
-                              <td className="px-4 py-6 mac-muted text-sm" colSpan={8}>
-                                No users found.
-                              </td>
+                              <td className="px-4 py-6 mac-muted text-sm" colSpan={8}>No users found.</td>
                             </tr>
                           )}
                         </tbody>
@@ -760,23 +740,141 @@ export function AdminPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Credit adjustment — appears when a user is selected */}
+                {adjustUserId && (() => {
+                  const sel = users.find((u) => u.id === adjustUserId);
+                  return (
+                    <div className="mac-panel p-5 space-y-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-lg font-semibold">Adjust credits</div>
+                          {sel && (
+                            <div className="text-sm mac-muted pt-0.5">
+                              {sel.email} &middot; {sel.credits_balance.toLocaleString()} credits &middot; {sel.subscription_plan || 'free'}
+                            </div>
+                          )}
+                        </div>
+                        <button type="button" className="mac-btn px-3 py-2 text-xs shrink-0" onClick={() => setAdjustUserId('')}>
+                          Clear selection
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Add / remove delta */}
+                        <div className="mac-card p-4 space-y-3">
+                          <div className="text-sm font-semibold">Add / remove credits</div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium mac-muted block">
+                              Delta <span className="opacity-60">(positive = add, negative = remove)</span>
+                            </label>
+                            <input
+                              type="number"
+                              value={adjustDelta}
+                              onChange={(e) => setAdjustDelta(Number(e.target.value))}
+                              className="mac-input px-3 py-2 text-sm w-full"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="mac-btn mac-btn-primary px-4 py-2 text-sm w-full"
+                            disabled={isBusy || !adjustDelta}
+                            onClick={handleAdjust}
+                          >
+                            {isBusy ? 'Saving…' : 'Apply delta'}
+                          </button>
+                        </div>
+
+                        {/* Set exact balance */}
+                        <div className="mac-card p-4 space-y-3">
+                          <div className="text-sm font-semibold">Set exact balance</div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium mac-muted block">
+                              New balance <span className="opacity-60">(replaces current balance)</span>
+                            </label>
+                            <input
+                              type="number"
+                              value={adjustSetBalance}
+                              onChange={(e) => setAdjustSetBalance(Number(e.target.value))}
+                              className="mac-input px-3 py-2 text-sm w-full"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="mac-btn px-4 py-2 text-sm w-full"
+                            disabled={isBusy || !Number.isFinite(Number(adjustSetBalance))}
+                            onClick={handleSetBalance}
+                          >
+                            {isBusy ? 'Saving…' : 'Set balance'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Shared fields */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium mac-muted block">
+                            Expires in days <span className="opacity-60">(optional — blank = auto based on plan)</span>
+                          </label>
+                          <input
+                            type="number"
+                            value={adjustExpiresDays}
+                            onChange={(e) => setAdjustExpiresDays(e.target.value)}
+                            placeholder="e.g. 30"
+                            className="mac-input px-3 py-2 text-sm w-full"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium mac-muted block">
+                            Reason <span className="opacity-60">(optional — logged in ledger)</span>
+                          </label>
+                          <input
+                            value={adjustReason}
+                            onChange={(e) => setAdjustReason(e.target.value)}
+                            placeholder="e.g. refund, promo"
+                            className="mac-input px-3 py-2 text-sm w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </>
             )}
 
             {activeTab === 'coupons' && (
-              <div className="mac-panel p-5 space-y-3">
+              <div className="mac-panel p-5 space-y-5">
                 <div className="text-lg font-semibold">Coupons</div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <input value={newCouponCode} onChange={(e) => setNewCouponCode(e.target.value)} placeholder="New coupon code" className="mac-input px-3 py-2 text-sm" />
-                  <input type="number" value={newCouponCredits} onChange={(e) => setNewCouponCredits(Number(e.target.value))} placeholder="Credits" className="mac-input px-3 py-2 text-sm" />
+
+                <div className="mac-card p-4 space-y-3">
+                  <div className="text-sm font-semibold">Create coupon</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium mac-muted block">Coupon code</label>
+                      <input value={newCouponCode} onChange={(e) => setNewCouponCode(e.target.value)} placeholder="e.g. WELCOME50" className="mac-input px-3 py-2 text-sm w-full" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium mac-muted block">Credits to grant</label>
+                      <input type="number" value={newCouponCredits} onChange={(e) => setNewCouponCredits(Number(e.target.value))} placeholder="e.g. 500" className="mac-input px-3 py-2 text-sm w-full" />
+                    </div>
+                  </div>
                   <button className="mac-btn mac-btn-primary px-4 py-2 text-sm" disabled={isBusy || !newCouponCode.trim()} onClick={handleCreateCoupon}>
                     Create coupon
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                  <input value={assignCouponCode} onChange={(e) => setAssignCouponCode(e.target.value)} placeholder="Coupon code" className="mac-input px-3 py-2 text-sm" />
-                  <input value={assignUserId} onChange={(e) => setAssignUserId(e.target.value)} placeholder="User ID" className="mac-input px-3 py-2 text-sm" />
+                <div className="mac-card p-4 space-y-3">
+                  <div className="text-sm font-semibold">Assign / unassign coupon</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium mac-muted block">Coupon code</label>
+                      <input value={assignCouponCode} onChange={(e) => setAssignCouponCode(e.target.value)} placeholder="e.g. WELCOME50" className="mac-input px-3 py-2 text-sm w-full" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium mac-muted block">User ID</label>
+                      <input value={assignUserId} onChange={(e) => setAssignUserId(e.target.value)} placeholder="Paste user ID from Users tab" className="mac-input px-3 py-2 text-sm w-full font-mono" />
+                    </div>
+                  </div>
                   <div className="flex gap-2">
                     <button className="mac-btn mac-btn-primary px-4 py-2 text-sm" disabled={isBusy || !assignCouponCode.trim() || !assignUserId.trim()} onClick={() => handleAssign('assign')}>
                       Assign
