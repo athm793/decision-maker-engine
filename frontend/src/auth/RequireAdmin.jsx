@@ -4,16 +4,19 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 
 export function RequireAdmin({ children }) {
-  const { user, isReady } = useAuth();
+  const { user, isReady, session } = useAuth();
   const location = useLocation();
   const [isAdmin, setIsAdmin] = useState(null);
   const [diagText, setDiagText] = useState(null);
   const [isDiagLoading, setIsDiagLoading] = useState(false);
   const [diagError, setDiagError] = useState(null);
 
+  const accessToken = session?.access_token || null;
+  const authHeaders = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+
   useEffect(() => {
     let isMounted = true;
-    if (!isReady || !user) {
+    if (!isReady || !user || !accessToken) {
       setIsAdmin(null);
       setDiagText(null);
       setDiagError(null);
@@ -24,7 +27,7 @@ export function RequireAdmin({ children }) {
 
     (async () => {
       try {
-        const res = await axios.get('/api/me', { timeout: 10000 });
+        const res = await axios.get('/api/me', { headers: authHeaders, timeout: 10000 });
         const role = String(res?.data?.role || '').toLowerCase();
         if (isMounted) setIsAdmin(role === 'admin');
       } catch {
@@ -35,14 +38,14 @@ export function RequireAdmin({ children }) {
     return () => {
       isMounted = false;
     };
-  }, [isReady, user]);
+  }, [isReady, user, accessToken]);
 
   const fetchDiagnostics = async () => {
     if (isDiagLoading) return;
     setDiagError(null);
     setIsDiagLoading(true);
     try {
-      const res = await axios.get('/api/me/diagnostics', { timeout: 15000 });
+      const res = await axios.get('/api/me/diagnostics', { headers: authHeaders, timeout: 15000 });
       const text = JSON.stringify(res?.data || {}, null, 2);
       setDiagText(text);
       if (navigator?.clipboard?.writeText) {
