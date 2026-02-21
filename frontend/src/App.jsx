@@ -11,7 +11,7 @@ import { TopBar } from './components/TopBar';
 import { useAuth } from './auth/AuthProvider.jsx';
 
 function App() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, session } = useAuth();
   const [step, setStep] = useState('upload'); // upload, mapping, creating_job, processing
   const [file, setFile] = useState(null);
   const [previewData, setPreviewData] = useState(null);
@@ -202,16 +202,18 @@ function App() {
 
   useEffect(() => {
     let isMounted = true;
-    if (!user) {
+    const accessToken = session?.access_token || null;
+    if (!user || !accessToken) {
       setMeRole(null);
       return () => {
         isMounted = false;
       };
     }
 
+    const authHeaders = { Authorization: `Bearer ${accessToken}` };
     (async () => {
       try {
-        const res = await axios.get('/api/me', { timeout: 10000 });
+        const res = await axios.get('/api/me', { headers: authHeaders, timeout: 10000 });
         const role = String(res?.data?.role || '').toLowerCase();
         if (isMounted) setMeRole(role || null);
       } catch {
@@ -222,7 +224,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [user]);
+  }, [user, session?.access_token]);
 
   const handleStopJob = async () => {
     if (!jobId || isCancelling) return;
