@@ -125,6 +125,53 @@ def _coerce_company(payload: Any) -> dict[str, Any] | None:
     return None
 
 
+def _build_people_system_prompt() -> str:
+    return (
+        "You are a lead research assistant specializing in finding business decision-makers.\n"
+        "Analyze the serper_results (Google search evidence) provided in the user message to identify "
+        "real people who hold leadership roles at the specified company.\n\n"
+        "## Output format\n"
+        "Return ONLY a raw JSON object — no markdown fences, no explanation — matching this schema exactly:\n"
+        "{\n"
+        "  \"people\": [\n"
+        "    {\n"
+        "      \"name\": \"Full Name\",\n"
+        "      \"title\": \"Exact Job Title from evidence\",\n"
+        "      \"platform\": \"linkedin|yelp|facebook|instagram|google_maps\",\n"
+        "      \"profile_url\": \"https://...\",\n"
+        "      \"emails_found\": [\"email@domain.com\"],\n"
+        "      \"confidence\": \"HIGH|MEDIUM|LOW\"\n"
+        "    }\n"
+        "  ],\n"
+        "  \"company\": {\n"
+        "    \"company_website\": \"\",\n"
+        "    \"company_type\": \"\",\n"
+        "    \"company_address\": \"\",\n"
+        "    \"gmaps_rating\": null,\n"
+        "    \"gmaps_reviews\": null\n"
+        "  }\n"
+        "}\n"
+        "If no decision-makers are found, return {\"people\": [], \"company\": {}}.\n\n"
+        "## Confidence scoring\n"
+        "- HIGH: The person is named in a profile URL (e.g. linkedin.com/in/firstname-lastname) AND "
+        "a snippet confirms their title at this specific company.\n"
+        "- MEDIUM: A snippet names the person with their title and company, but no direct profile URL is available.\n"
+        "- LOW: The person is mentioned only once with no clear title confirmation or company association.\n\n"
+        "## Evidence rules — strictly follow these\n"
+        "- NEVER include a person not explicitly mentioned in serper_results.\n"
+        "- NEVER invent, guess, or hallucinate names, titles, emails, or URLs.\n"
+        "- If a result could refer to a different company with a similar name, EXCLUDE it.\n"
+        "- If the same person appears in multiple results, include them once at the highest confidence level.\n"
+        "- Only include titles that match the role_keywords listed in the input.\n"
+        "- Exclude non-leadership roles: assistant, intern, coordinator, receptionist, technician, "
+        "support, customer service, representative, specialist, associate, staff, clerk.\n"
+        "- Use the exact title wording from the evidence, not a generic label.\n"
+        "- Prefer LinkedIn profile URLs; for other platforms include the most direct URL found.\n"
+        "- Populate the company object with any website, type, address, or Google Maps rating/review "
+        "count you can reliably infer from serper_results; leave fields blank/null if uncertain.\n"
+    )
+
+
 class OpenAICompatibleLLM:
     def __init__(
         self,
@@ -383,6 +430,9 @@ class OpenAICompatibleLLM:
                     return s
 
                 company = str(user_payload.get("company_name") or "").strip()
+                loc = str(user_payload.get("location") or "").strip()
+                web = str(user_payload.get("website") or "").strip()
+                ctype = str(user_payload.get("company_type") or "").strip()
                 sg = user_payload.get("search_guidance") or {}
                 role_kw = []
                 if isinstance(sg, dict) and isinstance(sg.get("role_keywords"), list):
@@ -393,11 +443,12 @@ class OpenAICompatibleLLM:
                 titles_quoted = [f"\"{t}\"" for t in titles_clean if t]
                 roles_expr = " OR ".join(titles_quoted)
                 company_clean = company.replace('"', "").strip()
-                base_q = f"(\"{company_clean}\") AND ({roles_expr})".strip()
+                loc_clean = loc.replace('"', "").strip()
+                if loc_clean:
+                    base_q = f"(\"{company_clean}\") AND ({roles_expr}) AND \"{loc_clean}\"".strip()
+                else:
+                    base_q = f"(\"{company_clean}\") AND ({roles_expr})".strip()
                 queries = [{"q": base_q}]
-                loc = str(user_payload.get("location") or "").strip()
-                web = str(user_payload.get("website") or "").strip()
-                ctype = str(user_payload.get("company_type") or "").strip()
                 if deep_search:
                     deep_hint = _normalize_deep_hint(loc) or _normalize_deep_hint(web) or _normalize_deep_hint(ctype)
                     if deep_hint:
@@ -592,14 +643,7 @@ class OpenAICompatibleLLM:
     ) -> list[dict[str, Any]]:
         base_keywords = role_keywords_override if role_keywords_override else decision_maker_query_keywords()
         role_keywords = [str(k).strip().strip('"') for k in base_keywords]
-        system = (
-            "You are a research assistant. Find real people who hold leadership roles at the given company. "
-            + "You will be given serper_results (search evidence). Use it to decide and cite likely matches. "
-            + f"You may run at most {int(max_search_calls or 0)} searches during planning, but for the final answer use only the provided evidence. "
-            + "Never use the generic phrase \"decision maker\" or \"decision makers\" in search queries. "
-            + "Prefer platform-specific and title-specific queries using the selected platforms and role keywords from the input. "
-            + "Return only JSON."
-        )
+        system = _build_people_system_prompt()
 
         user = {
             "company_name": company_name,
@@ -678,14 +722,7 @@ class OpenAICompatibleLLM:
         max_search_calls: int = 0,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         payload = await self._run_serper_planner(
-            system_prompt=(
-                "You are a research assistant. Find real people who hold leadership roles at the given company. "
-                + "You will be given serper_results (search evidence). Use it to decide and cite likely matches. "
-                + f"You may run at most {int(max_search_calls or 0)} searches during planning, but for the final answer use only the provided evidence. "
-                + "Never use the generic phrase \"decision maker\" or \"decision makers\" in search queries. "
-                + "Prefer platform-specific and title-specific queries using the selected platforms and role keywords from the input. "
-                + "Return only JSON."
-            ),
+            system_prompt=_build_people_system_prompt(),
             user_payload={
                 "company_name": company_name,
                 "location": location or "",
@@ -886,7 +923,11 @@ def get_llm_client() -> OpenAICompatibleLLM:
         raise LLMDisabledError("LLM is not configured")
 
     base_url = settings.llm_base_url
-    model = settings.llm_model or ("openai/gpt-4o-mini" if (base_url and "openrouter.ai" in base_url) else "sonar")
+    model = settings.llm_model
+    if not model:
+        raise LLMDisabledError(
+            "LLM model is not configured. Set the LLM_MODEL (or OPENROUTER_MODEL) environment variable."
+        )
     temperature = settings.llm_temperature
     extra_headers: dict[str, str] = {}
     if base_url and "openrouter.ai" in base_url:
