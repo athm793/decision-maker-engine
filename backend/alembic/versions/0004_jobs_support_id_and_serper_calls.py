@@ -16,27 +16,21 @@ depends_on = None
 
 
 def _column_names(table: str) -> set[str]:
-    bind = op.get_bind()
-    rows = bind.execute(sa.text(f"PRAGMA table_info({table})")).fetchall()
-    names: set[str] = set()
-    for r in rows:
-        try:
-            names.add(str(r[1]))
-        except Exception:
-            continue
-    return names
+    from sqlalchemy import inspect as sa_inspect
+    inspector = sa_inspect(op.get_bind())
+    try:
+        return {col["name"] for col in inspector.get_columns(table)}
+    except Exception:
+        return set()
 
 
 def _index_names(table: str) -> set[str]:
-    bind = op.get_bind()
-    rows = bind.execute(sa.text(f"PRAGMA index_list({table})")).fetchall()
-    names: set[str] = set()
-    for r in rows:
-        try:
-            names.add(str(r[1]))
-        except Exception:
-            continue
-    return names
+    from sqlalchemy import inspect as sa_inspect
+    inspector = sa_inspect(op.get_bind())
+    try:
+        return {idx["name"] for idx in inspector.get_indexes(table)}
+    except Exception:
+        return set()
 
 
 def upgrade() -> None:

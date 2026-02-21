@@ -16,16 +16,29 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("subscriptions") as batch_op:
-        batch_op.add_column(sa.Column("provider", sa.String(), nullable=True))
-        batch_op.add_column(sa.Column("provider_customer_id", sa.String(), nullable=True))
-        batch_op.add_column(sa.Column("provider_subscription_id", sa.String(), nullable=True))
-        batch_op.add_column(sa.Column("provider_order_id", sa.String(), nullable=True))
+    from sqlalchemy import inspect as sa_inspect
+    inspector = sa_inspect(op.get_bind())
+    existing_cols = {col["name"] for col in inspector.get_columns("subscriptions")}
+    existing_idxs = {idx["name"] for idx in inspector.get_indexes("subscriptions")}
 
-        batch_op.create_index("ix_subscriptions_provider", ["provider"])
-        batch_op.create_index("ix_subscriptions_provider_customer_id", ["provider_customer_id"])
-        batch_op.create_index("ix_subscriptions_provider_subscription_id", ["provider_subscription_id"])
-        batch_op.create_index("ix_subscriptions_provider_order_id", ["provider_order_id"])
+    with op.batch_alter_table("subscriptions") as batch_op:
+        if "provider" not in existing_cols:
+            batch_op.add_column(sa.Column("provider", sa.String(), nullable=True))
+        if "provider_customer_id" not in existing_cols:
+            batch_op.add_column(sa.Column("provider_customer_id", sa.String(), nullable=True))
+        if "provider_subscription_id" not in existing_cols:
+            batch_op.add_column(sa.Column("provider_subscription_id", sa.String(), nullable=True))
+        if "provider_order_id" not in existing_cols:
+            batch_op.add_column(sa.Column("provider_order_id", sa.String(), nullable=True))
+
+        if "ix_subscriptions_provider" not in existing_idxs:
+            batch_op.create_index("ix_subscriptions_provider", ["provider"])
+        if "ix_subscriptions_provider_customer_id" not in existing_idxs:
+            batch_op.create_index("ix_subscriptions_provider_customer_id", ["provider_customer_id"])
+        if "ix_subscriptions_provider_subscription_id" not in existing_idxs:
+            batch_op.create_index("ix_subscriptions_provider_subscription_id", ["provider_subscription_id"])
+        if "ix_subscriptions_provider_order_id" not in existing_idxs:
+            batch_op.create_index("ix_subscriptions_provider_order_id", ["provider_order_id"])
 
 
 def downgrade() -> None:
