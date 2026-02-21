@@ -16,6 +16,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Widen alembic_version.version_num in case 0001_init already ran before
+    # this fix was added (the default VARCHAR(32) is too short for several IDs).
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute(sa.text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"))
+
     from sqlalchemy import inspect as sa_inspect
     inspector = sa_inspect(op.get_bind())
     existing_cols = {col["name"] for col in inspector.get_columns("subscriptions")}
