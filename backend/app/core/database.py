@@ -19,11 +19,27 @@ else:
             host = url.host
             port = int(url.port or 5432)
             if host:
-                infos = socket.getaddrinfo(host, port, family=socket.AF_INET, type=socket.SOCK_STREAM)
+                try:
+                    infos = socket.getaddrinfo(host, port, family=socket.AF_INET, type=socket.SOCK_STREAM)
+                except socket.gaierror:
+                    infos = []
+
                 if infos:
                     ipv4 = infos[0][4][0]
                     if ipv4:
                         connect_args = {"sslmode": "require", "hostaddr": ipv4}
+                else:
+                    raise RuntimeError(
+                        f"No IPv4 address found for database host '{host}'. "
+                        "If you are using a Supabase direct connection (port 5432, "
+                        "host db.<ref>.supabase.co), switch DATABASE_URL to the "
+                        "Supabase connection pooler URL instead — it uses port 6543 "
+                        "and a host like aws-0-<region>.pooler.supabase.com, which "
+                        "supports IPv4. Find it in your Supabase dashboard under "
+                        "Project Settings > Database > Connection string > Transaction pooler."
+                    )
+    except RuntimeError:
+        raise
     except Exception:
         connect_args = {}
 
