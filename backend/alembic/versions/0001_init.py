@@ -39,7 +39,14 @@ def upgrade() -> None:
             "profiles",
             sa.Column("id", sa.String(), primary_key=True),
             sa.Column("email", sa.String(), nullable=True),
+            sa.Column("work_email", sa.String(), nullable=True),
+            sa.Column("first_name", sa.String(), nullable=True),
+            sa.Column("last_name", sa.String(), nullable=True),
+            sa.Column("company_name", sa.String(), nullable=True),
             sa.Column("role", sa.String(), nullable=True),
+            sa.Column("signup_ip", sa.String(), nullable=True),
+            sa.Column("last_ip", sa.String(), nullable=True),
+            sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("(CURRENT_TIMESTAMP)")),
         )
     idxs = existing_indexes("profiles")
@@ -47,6 +54,10 @@ def upgrade() -> None:
         op.create_index("ix_profiles_id", "profiles", ["id"])
     if "ix_profiles_email" not in idxs:
         op.create_index("ix_profiles_email", "profiles", ["email"])
+    if "ix_profiles_work_email" not in idxs:
+        op.create_index("ix_profiles_work_email", "profiles", ["work_email"])
+    if "ix_profiles_role" not in idxs:
+        op.create_index("ix_profiles_role", "profiles", ["role"])
 
     if "jobs" not in existing_tables:
         op.create_table(
@@ -277,6 +288,8 @@ def downgrade() -> None:
     op.drop_table("jobs")
     sa.Enum(name="jobstatus").drop(op.get_bind(), checkfirst=True)
 
+    op.drop_index("ix_profiles_role", table_name="profiles")
+    op.drop_index("ix_profiles_work_email", table_name="profiles")
     op.drop_index("ix_profiles_email", table_name="profiles")
     op.drop_index("ix_profiles_id", table_name="profiles")
     op.drop_table("profiles")
