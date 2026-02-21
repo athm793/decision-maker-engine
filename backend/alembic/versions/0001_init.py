@@ -21,6 +21,11 @@ def _inspector():
 
 
 def upgrade() -> None:
+    # Alembic creates alembic_version with version_num VARCHAR(32) by default,
+    # which is too short for some revision IDs in this project. Widen it early.
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute(sa.text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"))
+
     inspector = _inspector()
     existing_tables = set(inspector.get_table_names())
 
